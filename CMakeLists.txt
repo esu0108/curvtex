@@ -46,6 +46,49 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PUBLIC d3d12 dxgi d3dcompiler dwmapi)
 
+# ---- シェーダの事前コンパイル (fxc) -----------------------------------------
+# shaders/*.hlsl をビルド時にコンパイルし、バイトコードを C 配列ヘッダとして生成する。
+if(NOT FXC_EXECUTABLE)
+  # 括弧は CMake の変数名に使えないのでエスケープする
+  set(_pf86 "$ENV{ProgramFiles\(x86\)}")
+  if(NOT _pf86)
+    set(_pf86 "C:/Program Files (x86)")
+  endif()
+  file(GLOB _sdk_bin_dirs "${_pf86}/Windows Kits/10/bin/*/x64")
+  list(SORT _sdk_bin_dirs COMPARE NATURAL ORDER DESCENDING)
+  find_program(FXC_EXECUTABLE fxc HINTS ${_sdk_bin_dirs})
+endif()
+if(NOT FXC_EXECUTABLE)
+  message(FATAL_ERROR "fxc.exe が見つかりません。Windows SDK をインストールするか -DFXC_EXECUTABLE=<path> を指定してください。")
+endif()
+
+set(SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+file(MAKE_DIRECTORY ${SHADER_OUT_DIR})
+
+# Debug: 最適化なし+デバッグ情報 / それ以外: 最適化あり
+set(FXC_FLAGS /nologo /Ges
+  $<$<CONFIG:Debug>:/Zi>
+  $<$<CONFIG:Debug>:/Od>
+  $<$<NOT:$<CONFIG:Debug>>:/O3>)
+
+set(SHADER_HEADERS)
+function(add_shader name hlsl entry profile varname)
+  set(out ${SHADER_OUT_DIR}/${name}.h)
+  add_custom_command(
+    OUTPUT  ${out}
+    COMMAND ${FXC_EXECUTABLE} ${FXC_FLAGS} /E ${entry} /T ${profile} /Vn ${varname} /Fh ${out} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${hlsl}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${hlsl}
+    COMMENT "fxc ${hlsl} (${entry}, ${profile})"
+    COMMAND_EXPAND_LISTS # 空に評価された生成式が "" 引数として渡るのを防ぐ
+    VERBATIM)
+  set(SHADER_HEADERS ${SHADER_HEADERS} ${out} PARENT_SCOPE)
+endfunction()
+
+add_shader(pass1_vs pass1.hlsl VSMain vs_5_0 g_Pass1VS)
+add_shader(pass1_ps pass1.hlsl PSMain ps_5_0 g_Pass1PS)
+add_shader(pass2_vs pass2.hlsl VSMain vs_5_0 g_Pass2VS)
+add_shader(pass2_ps pass2.hlsl PSMain ps_5_0 g_Pass2PS)
+
 # ---- Application ------------------------------------------------------------
 find_package(Threads REQUIRED) # rapidobj は std::thread を使用
 
@@ -57,11 +100,18 @@ add_executable(curvtex WIN32
   src/Mesh.h
   src/Bmp.cpp
   src/Bmp.h
+  shaders/pass1.hlsl
+  shaders/pass2.hlsl
+  ${SHADER_HEADERS}
 )
+
+# .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
+set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include
   src
+  ${SHADER_OUT_DIR}
 )
 target_link_libraries(curvtex PRIVATE imgui_lib Threads::Threads comdlg32)
 target_compile_definitions(curvtex PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

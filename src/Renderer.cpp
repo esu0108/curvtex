@@ -1,7 +1,5 @@
 #include "Renderer.h"
 
-#include <d3dcompiler.h>
-
 #include <climits>
 #include <cstddef>
 #include <cstdio>
@@ -10,114 +8,15 @@
 #include <stdexcept>
 #include <string>
 
-// ============================================================================
-// HLSL (実行時に D3DCompile でコンパイル)
-// ============================================================================
+// ビルド時に fxc でコンパイルされたシェーダ (shaders/*.hlsl → CMake が生成するヘッダ)
+#include "pass1_vs.h"
+#include "pass1_ps.h"
+#include "pass2_vs.h"
+#include "pass2_ps.h"
+
 namespace {
 
-// ---- パス1: UV空間へ法線/位置をラスタライズ -------------------------------
-const char* kPass1HLSL = R"HLSL(
-struct VSIn {
-    float3 pos : POSITION;
-    float3 nrm : NORMAL;
-    float2 uv  : TEXCOORD0;
-};
-struct VSOut {
-    float4 sv   : SV_POSITION;
-    float3 nrm  : NORMAL;
-    float3 wpos : TEXCOORD0;
-};
 
-// 頂点のUVを(クリップ空間の)POSITIONとして出力する。
-// UVの v は上向きなので、v=1 がテクスチャの最上行になる。
-VSOut VSMain(VSIn i) {
-    VSOut o;
-    o.sv   = float4(i.uv.x * 2.0 - 1.0, i.uv.y * 2.0 - 1.0, 0.0, 1.0);
-    o.nrm  = i.nrm;
-    o.wpos = i.pos;
-    return o;
-}
-
-struct PSOut {
-    float4 normal   : SV_Target0; // xyz = 法線, w = カバレッジ(1)
-    float4 position : SV_Target1; // xyz = オブジェクト空間位置(曲率のスケール補正用)
-};
-
-PSOut PSMain(VSOut i) {
-    PSOut o;
-    o.normal   = float4(normalize(i.nrm), 1.0);
-    o.position = float4(i.wpos, 1.0);
-    return o;
-}
-)HLSL";
-
-// ---- パス2: 法線から曲率を計算 -------------------------------------------
-const char* kPass2HLSL = R"HLSL(
-cbuffer CB : register(b0) {
-    uint  texW;
-    uint  texH;
-    float invRange; // 1 / 最大曲率
-    uint  mode;     // 0: 符号付き(0.5=平坦, 凸>0.5), 1: 絶対値
-    uint  radius;   // 差分のサンプル幅(テクセル)。大きいほど滑らか
-};
-
-Texture2D<float4> gNormal   : register(t0);
-Texture2D<float4> gPosition : register(t1);
-
-struct VSOut { float4 pos : SV_POSITION; };
-
-VSOut VSMain(uint id : SV_VertexID) {
-    float2 uv = float2((id << 1) & 2, id & 2);
-    VSOut o;
-    o.pos = float4(uv * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
-    return o;
-}
-
-bool Fetch(int2 p, out float3 n, out float3 w) {
-    n = 0; w = 0;
-    if (p.x < 0 || p.y < 0 || p.x >= (int)texW || p.y >= (int)texH) return false;
-    float4 a = gNormal.Load(int3(p, 0));
-    if (a.w < 0.5) return false;
-    n = a.xyz;
-    w = gPosition.Load(int3(p, 0)).xyz;
-    return true;
-}
-
-// 方向 d に沿った曲率 ≈ (Δn · Δp) / |Δp|^2  (法線の変化量 / 表面上の移動量)
-float DirCurvature(int2 c, int2 d, float3 n0, float3 p0) {
-    // 補間した頂点法線は三角形ごとに線形なので、1テクセル差分だと曲率が三角形ごとに一定(階段状)になる。
-    // サンプル幅を広げて複数の三角形にまたがって平均する。端では幅を縮めて有効なテクセルを探す。
-    [loop]
-    for (int r = (int)radius; r >= 1; --r) {
-        float3 nA, pA, nB, pB;
-        bool a = Fetch(c - d * r, nA, pA);
-        bool b = Fetch(c + d * r, nB, pB);
-        if (!a && !b) continue;
-        if (!a) { nA = n0; pA = p0; }
-        if (!b) { nB = n0; pB = p0; }
-        float3 dn = nB - nA;
-        float3 dp = pB - pA;
-        float  l2 = dot(dp, dp);
-        return (l2 > 1e-20) ? dot(dn, dp) / l2 : 0.0;
-    }
-    return 0.0;
-}
-
-float4 PSMain(VSOut i) : SV_Target {
-    int2   c = int2(i.pos.xy);
-    float4 a = gNormal.Load(int3(c, 0));
-    if (a.w < 0.5) return float4(0, 0, 0, 1); // モデルが無い領域
-
-    float3 n = a.xyz;
-    float3 p = gPosition.Load(int3(c, 0)).xyz;
-
-    float k = 0.5 * (DirCurvature(c, int2(1, 0), n, p) + DirCurvature(c, int2(0, 1), n, p));
-
-    float v = (mode == 0) ? saturate(0.5 + 0.5 * k * invRange)
-                          : saturate(abs(k) * invRange);
-    return float4(v, v, v, 1);
-}
-)HLSL";
 
 // ============================================================================
 // helpers
@@ -139,21 +38,6 @@ D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* r, D3D12_RESOURCE_STATES from,
     b.Transition.StateBefore = from;
     b.Transition.StateAfter  = to;
     return b;
-}
-
-ComPtr<ID3DBlob> Compile(const char* src, const char* entry, const char* target) {
-    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-#ifdef _DEBUG
-    flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-    ComPtr<ID3DBlob> code, err;
-    HRESULT hr = D3DCompile(src, std::strlen(src), nullptr, nullptr, nullptr, entry, target, flags, 0, &code, &err);
-    if (FAILED(hr)) {
-        std::string msg = "Shader compile error:\n";
-        if (err) msg += static_cast<const char*>(err->GetBufferPointer());
-        throw std::runtime_error(msg);
-    }
-    return code;
 }
 
 D3D12_RESOURCE_DESC BufferDesc(UINT64 size) {
@@ -348,9 +232,7 @@ void Renderer::CreatePipelines() {
         rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
         rs1_      = MakeRootSignature(device_.Get(), rsd);
 
-        auto vs = Compile(kPass1HLSL, "VSMain", "vs_5_0");
-        auto ps = Compile(kPass1HLSL, "PSMain", "ps_5_0");
-
+        
         const D3D12_INPUT_ELEMENT_DESC layout[] = {
             {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, px), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
             {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, nx), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
@@ -359,8 +241,8 @@ void Renderer::CreatePipelines() {
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
         pd.pRootSignature = rs1_.Get();
-        pd.VS             = {vs->GetBufferPointer(), vs->GetBufferSize()};
-        pd.PS             = {ps->GetBufferPointer(), ps->GetBufferSize()};
+        pd.VS             = {g_Pass1VS, sizeof(g_Pass1VS)};
+        pd.PS             = {g_Pass1PS, sizeof(g_Pass1PS)};
         for (int i = 0; i < 2; ++i) pd.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
@@ -398,13 +280,11 @@ void Renderer::CreatePipelines() {
         rsd.pParameters   = params;
         rs2_              = MakeRootSignature(device_.Get(), rsd);
 
-        auto vs = Compile(kPass2HLSL, "VSMain", "vs_5_0");
-        auto ps = Compile(kPass2HLSL, "PSMain", "ps_5_0");
-
+        
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
         pd.pRootSignature = rs2_.Get();
-        pd.VS             = {vs->GetBufferPointer(), vs->GetBufferSize()};
-        pd.PS             = {ps->GetBufferPointer(), ps->GetBufferSize()};
+        pd.VS             = {g_Pass2VS, sizeof(g_Pass2VS)};
+        pd.PS             = {g_Pass2PS, sizeof(g_Pass2PS)};
         pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
