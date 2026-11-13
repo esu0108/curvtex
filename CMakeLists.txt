@@ -130,6 +130,8 @@ add_executable(curvtex WIN32
   src/MeshFbx.cpp
   src/Bmp.cpp
   src/Bmp.h
+  src/ImageWriter.cpp
+  src/ImageWriter.h
   shaders/pass1.hlsl
   shaders/pass2.hlsl
   ${SHADER_HEADERS}
@@ -143,7 +145,7 @@ target_include_directories(curvtex PRIVATE
   src
   ${SHADER_OUT_DIR}
 )
-target_link_libraries(curvtex PRIVATE imgui_lib fastgltf::fastgltf ufbx_lib Threads::Threads comdlg32)
+target_link_libraries(curvtex PRIVATE imgui_lib fastgltf::fastgltf ufbx_lib Threads::Threads comdlg32 windowscodecs ole32)
 target_compile_definitions(curvtex PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)

@@ -18,7 +18,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 
-#include "Bmp.h"
+#include "ImageWriter.h"
 #include "Mesh.h"
 #include "Renderer.h"
 
@@ -73,13 +73,23 @@ std::string SaveFileDialog(HWND owner, const std::string& initial) {
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner   = owner;
-    ofn.lpstrFilter = L"Bitmap (*.bmp)\0*.bmp\0\0";
-    ofn.lpstrDefExt = L"bmp";
+    ofn.lpstrFilter = L"PNG (*.png)\0*.png\0Bitmap (*.bmp)\0*.bmp\0TGA (*.tga)\0*.tga\0\0";
+    // 現在のパスの拡張子に合わせてフィルタを選んでおく (1=PNG, 2=BMP, 3=TGA)
+    switch (ImageFormatFromPath(fs::path(w))) {
+    case ImageFormat::Bmp: ofn.nFilterIndex = 2; break;
+    case ImageFormat::Tga: ofn.nFilterIndex = 3; break;
+    default: ofn.nFilterIndex = 1; break;
+    }
     ofn.lpstrFile   = buf;
     ofn.nMaxFile    = static_cast<DWORD>(std::size(buf));
     ofn.Flags       = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
     if (!GetSaveFileNameW(&ofn)) return {};
-    return Narrow(buf);
+    fs::path chosen(buf);
+    if (!chosen.has_extension()) { // 拡張子なしで確定した場合は、選択中のフィルタの形式にする
+        static const wchar_t* exts[] = {L".png", L".bmp", L".tga"};
+        chosen += exts[std::clamp<DWORD>(ofn.nFilterIndex, 1, 3) - 1];
+    }
+    return Narrow(chosen.wstring());
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +109,7 @@ struct AppState {
     bool                    Loading() const { return job.valid(); }
 
     char  objPath[1024]  = "";
-    char  savePath[1024] = "curvature.bmp";
+    char  savePath[1024] = "curvature.png";
     int   texW = 1024, texH = 1024;
     int   mode      = 0;      // 0: 符号付き, 1: 絶対値
     int   sampleRadius = 3;   // 曲率差分のサンプル幅(テクセル)
@@ -216,7 +226,7 @@ void DrawUI(AppState& s, Renderer& r, Actions& act) {
     }
     ImGui::TextWrapped("この曲率で出力が0/1に飽和します。半径Rの球の曲率は 1/R です。");
 
-    ImGui::SeparatorText("画像保存 (BMP)");
+    ImGui::SeparatorText("画像保存 (PNG / BMP / TGA)");
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputText("##save", s.savePath, sizeof(s.savePath));
     if (ImGui::Button("参照...##save")) act.browseSave = true;
@@ -414,12 +424,15 @@ int Run(HINSTANCE hInst, int nShow) {
         // ---- 保存 (フレーム完了後) ----
         if (act.save && state.hasBaked && state.savePath[0] != '\0') {
             fs::path out(Widen(state.savePath));
-            if (!out.has_extension()) out.replace_extension(L".bmp");
+            if (!out.has_extension()) out.replace_extension(L".png");
             std::vector<uint8_t> rgba;
-            if (renderer.ReadbackResult(rgba) && WriteBmp24(out, renderer.BakeWidth(), renderer.BakeHeight(), rgba.data())) {
+            std::string          err;
+            if (!renderer.ReadbackResult(rgba)) {
+                state.saveStatus = "保存に失敗しました（結果の読み出しに失敗）";
+            } else if (WriteImage(out, renderer.BakeWidth(), renderer.BakeHeight(), rgba.data(), err)) {
                 state.saveStatus = "保存しました: " + Narrow(out.wstring());
             } else {
-                state.saveStatus = "保存に失敗しました";
+                state.saveStatus = "保存に失敗しました: " + err;
             }
         }
     }
