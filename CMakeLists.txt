@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(curvtex LANGUAGES CXX)
+project(curvtex LANGUAGES CXX C)  # C: ufbx.c のコンパイル用
 
 if(NOT WIN32)
   message(FATAL_ERROR "This project requires Windows (DirectX 12).")
@@ -29,7 +29,34 @@ FetchContent_Declare(
   SOURCE_SUBDIR  _no_cmake_here
 )
 
-FetchContent_MakeAvailable(imgui rapidobj)
+# ---- fastgltf v1.0.1 (.gltf / .glb) -----------------------------------------
+# simdjson / simdutf は fastgltf が FetchContent で取得する。テスト・サンプル・ドキュメントは不要。
+set(FASTGLTF_DOWNLOAD_SIMDJSON ON  CACHE BOOL "" FORCE)
+set(FASTGLTF_DOWNLOAD_SIMDUTF  ON  CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_TESTS      OFF CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_EXAMPLES   OFF CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_DOCS       OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  fastgltf
+  GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+  GIT_TAG        v1.0.1
+  GIT_SHALLOW    TRUE
+)
+
+# ---- ufbx v0.23.1 (.fbx, single source file) --------------------------------
+# ufbx 側の CMake は使わず、ufbx.c を自前でライブラリ化する
+FetchContent_Declare(
+  ufbx
+  GIT_REPOSITORY https://github.com/ufbx/ufbx.git
+  GIT_TAG        v0.23.1
+  GIT_SHALLOW    TRUE
+  SOURCE_SUBDIR  _no_cmake_here
+)
+
+FetchContent_MakeAvailable(imgui rapidobj fastgltf ufbx)
+
+add_library(ufbx_lib STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
+target_include_directories(ufbx_lib PUBLIC ${ufbx_SOURCE_DIR})
 
 # ---- ImGui static library ---------------------------------------------------
 add_library(imgui_lib STATIC
@@ -98,6 +125,9 @@ add_executable(curvtex WIN32
   src/Renderer.h
   src/Mesh.cpp
   src/Mesh.h
+  src/MeshUtil.h
+  src/MeshGltf.cpp
+  src/MeshFbx.cpp
   src/Bmp.cpp
   src/Bmp.h
   shaders/pass1.hlsl
@@ -113,7 +143,7 @@ target_include_directories(curvtex PRIVATE
   src
   ${SHADER_OUT_DIR}
 )
-target_link_libraries(curvtex PRIVATE imgui_lib Threads::Threads comdlg32)
+target_link_libraries(curvtex PRIVATE imgui_lib fastgltf::fastgltf ufbx_lib Threads::Threads comdlg32)
 target_compile_definitions(curvtex PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 if(MSVC)

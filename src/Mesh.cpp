@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iterator>
@@ -180,7 +181,11 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
         return false;
     }
 
-    // バウンディング球
+    ComputeBounds(out);
+    return true;
+}
+
+void ComputeBounds(Mesh& out) {
     float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
     for (const auto& v : out.vertices) {
         const float p[3] = {v.px, v.py, v.pz};
@@ -196,7 +201,16 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
         d2 += d * d;
     }
     out.radius = std::max(0.5f * std::sqrt(d2), 1e-6f);
-    return true;
+}
+
+bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext == ".obj") return LoadObj(path, out, error);
+    if (ext == ".gltf" || ext == ".glb") return LoadGltf(path, out, error);
+    if (ext == ".fbx") return LoadFbx(path, out, error);
+    error = "未対応の拡張子です（対応: .obj / .gltf / .glb / .fbx）";
+    return false;
 }
 
 namespace {

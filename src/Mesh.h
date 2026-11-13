@@ -17,8 +17,16 @@ struct Mesh {
     float radius    = 1.0f; // バウンディング球半径(曲率レンジの初期値決定に使う)
 };
 
-// rapidobj で .obj を読み込む。UV必須。法線が無ければスムース法線を生成する。
-bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error);
+// 拡張子(.obj / .gltf / .glb / .fbx)で読み込み関数を振り分ける。UV必須。
+bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error);
+
+// 個別のローダー。いずれも UV 必須で、法線が無ければスムース法線を生成する。
+bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error);  // rapidobj
+bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error); // fastgltf (.gltf / .glb)
+bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error);  // ufbx
+
+// vertices から center / radius を計算する。
+void ComputeBounds(Mesh& mesh);
 
 // 同じ位置の頂点(UV継ぎ目・ハードエッジで分割された頂点)を溶接した上で、
 // 角度重み付きのスムース法線を再計算して vertices[].n に書き込む。

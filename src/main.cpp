@@ -58,7 +58,7 @@ std::string OpenFileDialog(HWND owner) {
     OPENFILENAMEW  ofn{};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner   = owner;
-    ofn.lpstrFilter = L"Wavefront OBJ (*.obj)\0*.obj\0All files (*.*)\0*.*\0\0";
+    ofn.lpstrFilter = L"3Dモデル (*.obj;*.gltf;*.glb;*.fbx)\0*.obj;*.gltf;*.glb;*.fbx\0Wavefront OBJ (*.obj)\0*.obj\0glTF (*.gltf;*.glb)\0*.gltf;*.glb\0FBX (*.fbx)\0*.fbx\0All files (*.*)\0*.*\0\0";
     ofn.lpstrFile   = buf;
     ofn.nMaxFile    = static_cast<DWORD>(std::size(buf));
     ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
@@ -132,7 +132,7 @@ void StartJob(AppState& s, std::string path, Mesh base, bool smooth) {
         try {
             if (!path.empty()) {
                 Mesh m;
-                if (!LoadObj(fs::path(Widen(path)), m, r.err)) return r;
+                if (!LoadMesh(fs::path(Widen(path)), m, r.err)) return r;
                 r.base = std::move(m);
             } else {
                 r.base = std::move(base);
