@@ -115,6 +115,8 @@ add_shader(pass1_vs pass1.hlsl VSMain vs_5_0 g_Pass1VS)
 add_shader(pass1_ps pass1.hlsl PSMain ps_5_0 g_Pass1PS)
 add_shader(pass2_vs pass2.hlsl VSMain vs_5_0 g_Pass2VS)
 add_shader(pass2_ps pass2.hlsl PSMain ps_5_0 g_Pass2PS)
+add_shader(view_vs  view.hlsl  VSMain vs_5_0 g_ViewVS)
+add_shader(view_ps  view.hlsl  PSMain ps_5_0 g_ViewPS)
 
 # ---- Application ------------------------------------------------------------
 find_package(Threads REQUIRED) # rapidobj は std::thread を使用
@@ -135,11 +137,12 @@ add_executable(curvtex WIN32
   src/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
   shaders/pass1.hlsl
   shaders/pass2.hlsl
+  shaders/view.hlsl
   ${SHADER_HEADERS}
 )
 
 # .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
-set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
+set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include

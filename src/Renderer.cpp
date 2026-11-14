@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include <algorithm>
 #include <climits>
 #include <cstddef>
 #include <cstdio>
@@ -13,10 +14,13 @@
 #include "pass1_ps.h"
 #include "pass2_vs.h"
 #include "pass2_ps.h"
+#include "view_vs.h"
+#include "view_ps.h"
 
 namespace {
 
-
+// 3Dビューのルート定数: mvp(16) + view(16) + lit(1) + パディング(3)
+constexpr UINT kViewConstants = 36;
 
 // ============================================================================
 // helpers
@@ -129,6 +133,9 @@ void Renderer::Init(HWND hwnd) {
     hd.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     hd.NumDescriptors = 8;
     Check(device_->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&rtvHeap_)), "CreateDescriptorHeap(RTV)");
+    hd.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    hd.NumDescriptors = 1;
+    Check(device_->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&dsvHeap_)), "CreateDescriptorHeap(DSV)");
     hd.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     hd.NumDescriptors = kSrvHeapSize;
     hd.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -147,6 +154,7 @@ void Renderer::Init(HWND hwnd) {
     CreateBackBuffers();
     CreatePipelines();
     CreateBakeTargets(bakeW_, bakeH_);
+    CreateViewTargets(viewW_, viewH_);
 }
 
 void Renderer::Shutdown() {
@@ -220,6 +228,56 @@ void Renderer::CreateBakeTargets(UINT w, UINT h) {
     make(DXGI_FORMAT_R8G8B8A8_UNORM, resultRT_, 4, 2);
 }
 
+void Renderer::CreateViewTargets(UINT w, UINT h) {
+    WaitIdle();
+    viewRT_.Reset();
+    viewDepth_.Reset();
+    viewW_ = w;
+    viewH_ = h;
+
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width            = w;
+    rd.Height           = h;
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels        = 1;
+    rd.SampleDesc.Count = 1;
+    rd.Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+
+    // カラー (ImGui::Image で表示するので SRV も作る)
+    rd.Format = kBackFormat;
+    rd.Flags  = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    D3D12_CLEAR_VALUE cv{};
+    cv.Format   = kBackFormat;
+    cv.Color[0] = 0.16f;
+    cv.Color[1] = 0.16f;
+    cv.Color[2] = 0.19f;
+    cv.Color[3] = 1.0f;
+    Check(device_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &cv, IID_PPV_ARGS(&viewRT_)),
+          "CreateCommittedResource(view color)");
+    device_->CreateRenderTargetView(viewRT_.Get(), nullptr, RtvCpu(5));
+    device_->CreateShaderResourceView(viewRT_.Get(), nullptr, SrvCpu(3));
+
+    // 深度
+    rd.Format = DXGI_FORMAT_D32_FLOAT;
+    rd.Flags  = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    D3D12_CLEAR_VALUE dcv{};
+    dcv.Format             = DXGI_FORMAT_D32_FLOAT;
+    dcv.DepthStencil.Depth = 1.0f;
+    Check(device_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_DEPTH_WRITE, &dcv, IID_PPV_ARGS(&viewDepth_)),
+          "CreateCommittedResource(view depth)");
+    device_->CreateDepthStencilView(viewDepth_.Get(), nullptr, dsvHeap_->GetCPUDescriptorHandleForHeapStart());
+}
+
+void Renderer::ResizeView(UINT w, UINT h) {
+    w = std::clamp<UINT>(w, 16, 8192);
+    h = std::clamp<UINT>(h, 16, 8192);
+    if (w == viewW_ && h == viewH_) return;
+    CreateViewTargets(w, h);
+}
+
 void Renderer::SetBakeSize(UINT w, UINT h) {
     if (w == 0 || h == 0) return;
     CreateBakeTargets(w, h);
@@ -268,7 +326,7 @@ void Renderer::CreatePipelines() {
         params[0].ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         params[0].Constants.ShaderRegister = 0;
         params[0].Constants.RegisterSpace  = 0;
-        params[0].Constants.Num32BitValues = 5;
+        params[0].Constants.Num32BitValues = 6;
         params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_PIXEL;
         params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         params[1].DescriptorTable.NumDescriptorRanges = 1;
@@ -293,6 +351,68 @@ void Renderer::CreatePipelines() {
         pd.RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM;
         pd.SampleDesc.Count      = 1;
         Check(device_->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso2_)), "CreateGraphicsPipelineState(pass2)");
+    }
+
+    // ---- 3Dビュー --------------------------------------------------------
+    {
+        D3D12_DESCRIPTOR_RANGE range{};
+        range.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        range.NumDescriptors                    = 1;
+        range.BaseShaderRegister                = 0;
+        range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        D3D12_ROOT_PARAMETER params[2]{};
+        params[0].ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[0].Constants.ShaderRegister = 0;
+        params[0].Constants.Num32BitValues = kViewConstants;
+        params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_ALL;
+        params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[1].DescriptorTable.NumDescriptorRanges = 1;
+        params[1].DescriptorTable.pDescriptorRanges   = &range;
+        params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        D3D12_STATIC_SAMPLER_DESC samp{};
+        samp.Filter           = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        samp.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        samp.AddressV         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        samp.AddressW         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        samp.ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER;
+        samp.MaxLOD           = D3D12_FLOAT32_MAX;
+        samp.ShaderRegister   = 0;
+        samp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+        D3D12_ROOT_SIGNATURE_DESC rsd{};
+        rsd.NumParameters     = 2;
+        rsd.pParameters       = params;
+        rsd.NumStaticSamplers = 1;
+        rsd.pStaticSamplers   = &samp;
+        rsd.Flags             = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        rs3_                  = MakeRootSignature(device_.Get(), rsd);
+
+        const D3D12_INPUT_ELEMENT_DESC layout[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, px), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, nx), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(Vertex, u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        };
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
+        pd.pRootSignature = rs3_.Get();
+        pd.VS             = {g_ViewVS, sizeof(g_ViewVS)};
+        pd.PS             = {g_ViewPS, sizeof(g_ViewPS)};
+        pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        pd.SampleMask            = UINT_MAX;
+        pd.RasterizerState       = DefaultRaster();
+        pd.RasterizerState.FrontCounterClockwise = TRUE; // 右手系・反時計回りが表(SV_IsFrontFace 用)。両面描画なのでカリングはしない
+        pd.DepthStencilState.DepthEnable    = TRUE;
+        pd.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+        pd.DepthStencilState.DepthFunc      = D3D12_COMPARISON_FUNC_LESS;
+        pd.DSVFormat                        = DXGI_FORMAT_D32_FLOAT;
+        pd.InputLayout           = {layout, static_cast<UINT>(std::size(layout))};
+        pd.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pd.NumRenderTargets      = 1;
+        pd.RTVFormats[0]         = kBackFormat;
+        pd.SampleDesc.Count      = 1;
+        Check(device_->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso3_)), "CreateGraphicsPipelineState(view)");
     }
 }
 
@@ -339,7 +459,7 @@ void Renderer::BeginFrame() {
     Check(cmdList_->Reset(cmdAlloc_.Get(), nullptr), "CommandList::Reset");
 }
 
-void Renderer::RecordBake(float invRange, uint32_t mode, uint32_t radius) {
+void Renderer::RecordBake(float invRange, uint32_t mode, uint32_t radius, uint32_t padding) {
     if (!HasMesh()) return;
     auto* cl = cmdList_.Get();
 
@@ -383,7 +503,8 @@ void Renderer::RecordBake(float invRange, uint32_t mode, uint32_t radius) {
             float    invRange;
             uint32_t mode;
             uint32_t radius;
-        } cb{bakeW_, bakeH_, invRange, mode, radius};
+            uint32_t pad;
+        } cb{bakeW_, bakeH_, invRange, mode, radius, padding};
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtv = RtvCpu(4);
         cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
@@ -395,7 +516,7 @@ void Renderer::RecordBake(float invRange, uint32_t mode, uint32_t radius) {
         cl->SetDescriptorHeaps(1, heaps);
         cl->SetGraphicsRootSignature(rs2_.Get());
         cl->SetPipelineState(pso2_.Get());
-        cl->SetGraphicsRoot32BitConstants(0, 5, &cb, 0);
+        cl->SetGraphicsRoot32BitConstants(0, 6, &cb, 0);
         cl->SetGraphicsRootDescriptorTable(1, SrvGpu(0)); // t0=normal, t1=position
         cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cl->DrawInstanced(3, 1, 0, 0);
@@ -403,6 +524,45 @@ void Renderer::RecordBake(float invRange, uint32_t mode, uint32_t radius) {
         D3D12_RESOURCE_BARRIER b = Transition(resultRT_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         cl->ResourceBarrier(1, &b);
     }
+}
+
+void Renderer::RecordView(const float* mvp16, const float* view16, bool lit) {
+    if (!HasMesh() || !viewRT_) return;
+    auto* cl = cmdList_.Get();
+
+    D3D12_RESOURCE_BARRIER toRt = Transition(viewRT_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cl->ResourceBarrier(1, &toRt);
+
+    const D3D12_CPU_DESCRIPTOR_HANDLE rtv = RtvCpu(5);
+    const D3D12_CPU_DESCRIPTOR_HANDLE dsv = dsvHeap_->GetCPUDescriptorHandleForHeapStart();
+    const float                       clear[4] = {0.16f, 0.16f, 0.19f, 1.0f};
+    cl->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    cl->ClearRenderTargetView(rtv, clear, 0, nullptr);
+    cl->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+    const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(viewW_), static_cast<float>(viewH_), 0.f, 1.f};
+    const D3D12_RECT     sc{0, 0, static_cast<LONG>(viewW_), static_cast<LONG>(viewH_)};
+    cl->RSSetViewports(1, &vp);
+    cl->RSSetScissorRects(1, &sc);
+
+    float cb[kViewConstants] = {};
+    std::memcpy(cb, mvp16, 16 * sizeof(float));
+    std::memcpy(cb + 16, view16, 16 * sizeof(float));
+    cb[32] = lit ? 1.0f : 0.0f;
+
+    ID3D12DescriptorHeap* heaps[] = {srvHeap_.Get()};
+    cl->SetDescriptorHeaps(1, heaps);
+    cl->SetGraphicsRootSignature(rs3_.Get());
+    cl->SetPipelineState(pso3_.Get());
+    cl->SetGraphicsRoot32BitConstants(0, kViewConstants, cb, 0);
+    cl->SetGraphicsRootDescriptorTable(1, SrvGpu(2)); // t0 = 曲率テクスチャ(結果)
+    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cl->IASetVertexBuffers(0, 1, &vbv_);
+    cl->IASetIndexBuffer(&ibv_);
+    cl->DrawIndexedInstanced(indexCount_, 1, 0, 0, 0);
+
+    D3D12_RESOURCE_BARRIER toSrv = Transition(viewRT_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cl->ResourceBarrier(1, &toSrv);
 }
 
 void Renderer::BeginBackbuffer(float r, float g, float b) {

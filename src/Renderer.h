@@ -18,7 +18,7 @@ class Renderer {
 public:
     static constexpr UINT        kBackBufferCount = 2;
     static constexpr UINT        kSrvHeapSize     = 64;
-    static constexpr UINT        kSrvReserved     = 3; // 0:normal 1:position 2:result (ImGuiは3以降を使う)
+    static constexpr UINT        kSrvReserved     = 4; // 0:normal 1:position 2:result 3:3Dビュー (ImGuiは4以降を使う)
     static constexpr DXGI_FORMAT kBackFormat      = DXGI_FORMAT_R8G8B8A8_UNORM;
 
     void Init(HWND hwnd);
@@ -34,7 +34,15 @@ public:
 
     // フレーム
     void BeginFrame();
-    void RecordBake(float invRange, uint32_t mode, uint32_t radius); // mode 0: 符号付き(0.5=平坦), 1: 絶対値 / radius: 差分のサンプル幅(テクセル)
+    void RecordBake(float invRange, uint32_t mode, uint32_t radius, uint32_t padding); // mode 0: 符号付き(0.5=平坦), 1: 絶対値 / radius: 差分のサンプル幅(テクセル) / padding: UV島の外へ塗り広げる幅(テクセル)
+    // 3Dビュー: 曲率テクスチャを貼ったモデルを ViewWidth x ViewHeight のテクスチャへ描く。
+    // mvp / view は行優先 4x4 (DirectXMath の XMFLOAT4X4 と同じ並び)。RecordBake の後で呼ぶこと。
+    void ResizeView(UINT width, UINT height); // フレーム記録前(BeginFrame の前)に呼ぶ
+    void RecordView(const float* mvp16, const float* view16, bool lit);
+    UINT ViewWidth() const { return viewW_; }
+    UINT ViewHeight() const { return viewH_; }
+    D3D12_GPU_DESCRIPTOR_HANDLE ViewSrvGpu() const { return SrvGpu(3); }
+
     void BeginBackbuffer(float r, float g, float b);
     void EndFrame();
 
@@ -57,6 +65,7 @@ private:
 
     void CreateBackBuffers();
     void CreateBakeTargets(UINT w, UINT h);
+    void CreateViewTargets(UINT w, UINT h);
     void CreatePipelines();
     ComPtr<ID3D12Resource> CreateUploadBuffer(const void* data, UINT64 size);
 
@@ -70,8 +79,9 @@ private:
     HANDLE                            fenceEvent_ = nullptr;
     UINT64                            fenceValue_ = 0;
 
-    ComPtr<ID3D12DescriptorHeap> rtvHeap_; // [0,1]=backbuffer [2]=normal [3]=position [4]=result
-    ComPtr<ID3D12DescriptorHeap> srvHeap_; // [0]=normal [1]=position [2]=result [3..]=ImGui
+    ComPtr<ID3D12DescriptorHeap> rtvHeap_; // [0,1]=backbuffer [2]=normal [3]=position [4]=result [5]=3Dビュー
+    ComPtr<ID3D12DescriptorHeap> dsvHeap_; // [0]=3Dビューの深度
+    ComPtr<ID3D12DescriptorHeap> srvHeap_; // [0]=normal [1]=position [2]=result [3]=3Dビュー [4..]=ImGui
     UINT                         rtvInc_ = 0, srvInc_ = 0;
     std::vector<UINT>            freeSrv_;
 
@@ -83,6 +93,10 @@ private:
     ComPtr<ID3D12Resource> normalRT_, posRT_, resultRT_;
     UINT                   bakeW_ = 1024, bakeH_ = 1024;
 
+    // 3Dビュー用ターゲット
+    ComPtr<ID3D12Resource> viewRT_, viewDepth_;
+    UINT                   viewW_ = 64, viewH_ = 64;
+
     // メッシュ
     ComPtr<ID3D12Resource>   vb_, ib_;
     D3D12_VERTEX_BUFFER_VIEW vbv_{};
@@ -90,6 +104,6 @@ private:
     UINT                     indexCount_ = 0;
 
     // パイプライン
-    ComPtr<ID3D12RootSignature> rs1_, rs2_;
-    ComPtr<ID3D12PipelineState> pso1_, pso2_;
+    ComPtr<ID3D12RootSignature> rs1_, rs2_, rs3_;
+    ComPtr<ID3D12PipelineState> pso1_, pso2_, pso3_;
 };

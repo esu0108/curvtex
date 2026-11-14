@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -17,6 +18,8 @@
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
+
+#include <DirectXMath.h>
 
 #include "ImageWriter.h"
 #include "Mesh.h"
@@ -113,6 +116,7 @@ struct AppState {
     int   texW = 1024, texH = 1024;
     int   mode      = 0;      // 0: 符号付き, 1: 絶対値
     int   sampleRadius = 3;   // 曲率差分のサンプル幅(テクセル)
+    int   padding      = 4;   // UV島の境界を塗り広げる幅(テクセル)。0 で無効
     bool  smoothNormals = true; // スムース法線を再計算するか
     Mesh  baseMesh;           // ファイルから読み込んだままのメッシュ
     float maxCurv   = 4.0f;   // この曲率(1/単位長)で出力が飽和する
@@ -122,7 +126,49 @@ struct AppState {
     bool  dirty     = false;
     std::string modelStatus = "モデル未読み込み";
     std::string saveStatus;
+
+    // ---- 3Dビュー (オービットカメラ。距離・移動量はモデル半径を1とした単位) ----
+    float yaw = 0.6f, pitch = 0.35f, dist = 3.0f;
+    float target[3] = {0, 0, 0}; // 注視点オフセット (モデル中心からの移動量)
+    bool  lit       = true;
+    bool  view3dVisible = false; // 今フレーム 3D タブが表示されているか (DrawUI が設定)
+    int   viewReqW = 0, viewReqH = 0; // 3D 表示領域のピクセルサイズ (DrawUI が設定)
 };
+
+constexpr float kFovY = DirectX::XM_PIDIV4;
+
+void ResetCamera(AppState& s) {
+    s.yaw = 0.6f;
+    s.pitch = 0.35f;
+    s.dist = 3.0f;
+    s.target[0] = s.target[1] = s.target[2] = 0.0f;
+}
+
+// 注視点→カメラの向きから、カメラの右・上ベクトルを求める (Y-up)
+void CameraBasis(const AppState& s, DirectX::XMFLOAT3& right, DirectX::XMFLOAT3& up) {
+    using namespace DirectX;
+    const XMVECTOR eyeDir = XMVectorSet(std::cos(s.pitch) * std::sin(s.yaw), std::sin(s.pitch), std::cos(s.pitch) * std::cos(s.yaw), 0.0f);
+    const XMVECTOR fwd    = XMVectorNegate(eyeDir);
+    const XMVECTOR r      = XMVector3Normalize(XMVector3Cross(fwd, XMVectorSet(0, 1, 0, 0)));
+    const XMVECTOR u      = XMVector3Cross(r, fwd);
+    XMStoreFloat3(&right, r);
+    XMStoreFloat3(&up, u);
+}
+
+// モデル行列(中心を原点へ・半径1へ正規化) × ビュー × 射影。HLSL 側は row_major で受けるので転置は不要。
+void BuildCamera(const AppState& s, const Mesh& mesh, float aspect, float mvp[16], float view[16]) {
+    using namespace DirectX;
+    const XMMATRIX model = XMMatrixTranslation(-mesh.center[0], -mesh.center[1], -mesh.center[2]) * XMMatrixScaling(1.0f / mesh.radius, 1.0f / mesh.radius, 1.0f / mesh.radius);
+    const XMVECTOR tgt   = XMVectorSet(s.target[0], s.target[1], s.target[2], 1.0f);
+    const XMVECTOR eye   = XMVectorAdd(tgt, XMVectorScale(XMVectorSet(std::cos(s.pitch) * std::sin(s.yaw), std::sin(s.pitch), std::cos(s.pitch) * std::cos(s.yaw), 0.0f), s.dist));
+    const XMMATRIX v     = XMMatrixLookAtRH(eye, tgt, XMVectorSet(0, 1, 0, 0));
+    const XMMATRIX p     = XMMatrixPerspectiveFovRH(kFovY, aspect, 0.02f, 200.0f);
+    XMFLOAT4X4     fm, fv;
+    XMStoreFloat4x4(&fm, model * v * p);
+    XMStoreFloat4x4(&fv, v);
+    std::memcpy(mvp, &fm, sizeof(fm));
+    std::memcpy(view, &fv, sizeof(fv));
+}
 
 // 前後の空白と、エクスプローラの「パスのコピー」で付く引用符を除去
 std::string CleanPath(std::string p) {
@@ -217,6 +263,10 @@ void DrawUI(AppState& s, Renderer& r, Actions& act) {
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::SliderInt("##radius", &s.sampleRadius, 1, 16)) s.dirty = true;
     ImGui::TextDisabled("大きいほど滑らか。小さいと三角形ごとの段差が出ます");
+    ImGui::Text("パディング (テクセル)");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::SliderInt("##padding", &s.padding, 0, 16)) s.dirty = true;
+    ImGui::TextDisabled("UV島の外側を最寄りの値で塗り広げ、継ぎ目の黒い線を防ぎます");
     ImGui::Text("最大曲率 (1/単位長)");
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::SliderFloat("##kmax", &s.maxCurv, 1e-3f, 1e4f, "%.4f", ImGuiSliderFlags_Logarithmic)) s.dirty = true;
@@ -239,16 +289,72 @@ void DrawUI(AppState& s, Renderer& r, Actions& act) {
     ImGui::EndChild();
     ImGui::SameLine();
 
-    // ---- 右: プレビュー ----
+    // ---- 右: プレビュー (タブで 3Dビュー / テクスチャ を切り替え) ----
     ImGui::BeginChild("Preview", ImVec2(0, 0), ImGuiChildFlags_Borders);
-    if (s.hasBaked) {
-        const ImVec2 avail = ImGui::GetContentRegionAvail();
-        const float  w     = static_cast<float>(r.BakeWidth());
-        const float  h     = static_cast<float>(r.BakeHeight());
-        const float  scale = std::min(avail.x / w, avail.y / h);
-        ImGui::Image(static_cast<ImTextureID>(r.ResultSrvGpu().ptr), ImVec2(w * scale, h * scale));
-    } else {
-        ImGui::TextDisabled("モデルを読み込むと、ここに曲率テクスチャが表示されます。");
+    s.view3dVisible = false;
+    if (ImGui::BeginTabBar("PreviewTabs")) {
+        // ---- 3Dビュー ----
+        if (ImGui::BeginTabItem("3Dビュー")) {
+            if (s.hasBaked) {
+                s.view3dVisible = true;
+                ImGui::Checkbox("ライティング", &s.lit);
+                ImGui::SameLine();
+                if (ImGui::Button("カメラをリセット")) ResetCamera(s);
+                ImGui::SameLine();
+                ImGui::TextDisabled("左ドラッグ: 回転 / 右・中ドラッグ: 移動 / ホイール: ズーム");
+
+                const ImVec2 avail = ImGui::GetContentRegionAvail();
+                if (avail.x >= 16.0f && avail.y >= 16.0f) {
+                    s.viewReqW = static_cast<int>(avail.x);
+                    s.viewReqH = static_cast<int>(avail.y);
+
+                    const ImVec2 p = ImGui::GetCursorScreenPos();
+                    ImGui::Image(static_cast<ImTextureID>(r.ViewSrvGpu().ptr), avail);
+                    ImGui::SetCursorScreenPos(p);
+                    ImGui::InvisibleButton("##view3d", avail, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+
+                    const ImGuiIO& io = ImGui::GetIO();
+                    if (ImGui::IsItemActive()) {
+                        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                            // オービット (ピッチは真上/真下の手前で止めて反転を防ぐ)
+                            s.yaw -= io.MouseDelta.x * 0.01f;
+                            s.pitch = std::clamp(s.pitch + io.MouseDelta.y * 0.01f, -1.55f, 1.55f);
+                        } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+                            // パン: 注視点での 1ピクセル あたりの距離でシーンがカーソルに追従する量だけ動かす
+                            DirectX::XMFLOAT3 right, up;
+                            CameraBasis(s, right, up);
+                            const float k = 2.0f * s.dist * std::tan(kFovY * 0.5f) / std::max(avail.y, 1.0f);
+                            for (int i = 0; i < 3; ++i) {
+                                const float rv = (i == 0) ? right.x : (i == 1) ? right.y : right.z;
+                                const float uv = (i == 0) ? up.x : (i == 1) ? up.y : up.z;
+                                s.target[i] += (-rv * io.MouseDelta.x + uv * io.MouseDelta.y) * k;
+                            }
+                        }
+                    }
+                    if (ImGui::IsItemHovered() && io.MouseWheel != 0.0f) {
+                        s.dist = std::clamp(s.dist * std::pow(0.9f, io.MouseWheel), 0.2f, 50.0f);
+                    }
+                }
+            } else {
+                ImGui::TextDisabled("モデルを読み込むと、ここに曲率テクスチャを貼った3Dモデルが表示されます。");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // ---- テクスチャ ----
+        if (ImGui::BeginTabItem("テクスチャ")) {
+            if (s.hasBaked) {
+                const ImVec2 avail = ImGui::GetContentRegionAvail();
+                const float  w     = static_cast<float>(r.BakeWidth());
+                const float  h     = static_cast<float>(r.BakeHeight());
+                const float  scale = std::min(avail.x / w, avail.y / h);
+                ImGui::Image(static_cast<ImTextureID>(r.ResultSrvGpu().ptr), ImVec2(w * scale, h * scale));
+            } else {
+                ImGui::TextDisabled("モデルを読み込むと、ここに曲率テクスチャが表示されます。");
+            }
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
     ImGui::EndChild();
 
@@ -435,10 +541,17 @@ int Run(HINSTANCE hInst, int nShow) {
         }
 
         // ---- 描画 ----
+        const bool drawView = state.view3dVisible && state.hasMesh && state.hasBaked;
+        if (drawView) renderer.ResizeView(static_cast<UINT>(state.viewReqW), static_cast<UINT>(state.viewReqH)); // 記録前にサイズ追従
         renderer.BeginFrame();
         if (state.dirty && state.hasMesh) {
-            renderer.RecordBake(1.0f / std::max(state.maxCurv, 1e-6f), static_cast<uint32_t>(state.mode), static_cast<uint32_t>(state.sampleRadius));
+            renderer.RecordBake(1.0f / std::max(state.maxCurv, 1e-6f), static_cast<uint32_t>(state.mode), static_cast<uint32_t>(state.sampleRadius), static_cast<uint32_t>(state.padding));
             state.dirty = false;
+        }
+        if (drawView) {
+            float mvp[16], view[16];
+            BuildCamera(state, state.baseMesh, static_cast<float>(renderer.ViewWidth()) / static_cast<float>(renderer.ViewHeight()), mvp, view);
+            renderer.RecordView(mvp, view, state.lit);
         }
         renderer.BeginBackbuffer(0.10f, 0.10f, 0.12f);
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), renderer.CommandList());

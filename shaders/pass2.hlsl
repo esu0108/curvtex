@@ -4,6 +4,7 @@ cbuffer CB : register(b0) {
     float invRange; // 1 / 最大曲率
     uint  mode;     // 0: 符号付き(0.5=平坦, 凸>0.5), 1: 絶対値
     uint  radius;   // 差分のサンプル幅(テクセル)。大きいほど滑らか
+    uint  pad;      // UV島の外側へ塗り広げる幅(テクセル)。0 で無効
 };
 
 Texture2D<float4> gNormal   : register(t0);
@@ -48,17 +49,58 @@ float DirCurvature(int2 c, int2 d, float3 n0, float3 p0) {
     return 0.0;
 }
 
+// テクセル c の曲率を 0..1 に正規化して返す
+float CurvatureValue(int2 c, float3 n, float3 p) {
+    float k = 0.5 * (DirCurvature(c, int2(1, 0), n, p) + DirCurvature(c, int2(0, 1), n, p));
+    return (mode == 0) ? saturate(0.5 + 0.5 * k * invRange)
+                       : saturate(abs(k) * invRange);
+}
+
+// モデルの無いテクセル c から、pad テクセル以内で最も近い「モデルのあるテクセル」を探す。
+// 正方形のリングを内側から広げ、これ以上近い候補が出ない距離に達したら打ち切る。
+bool FindNearestCovered(int2 c, out int2 q) {
+    q = c;
+    float best  = 1e30;
+    bool  found = false;
+    const float maxD2 = (float)(pad * pad);
+    [loop]
+    for (int r = 1; r <= (int)pad; ++r) {
+        if (found && best <= (float)(r * r)) break; // 以降のリングはどれも best より遠い
+        [loop]
+        for (int dy = -r; dy <= r; ++dy) {
+            const int stepx = (abs(dy) == r) ? 1 : 2 * r; // 上下の辺は全て、それ以外はリングの左右端のみ
+            [loop]
+            for (int dx = -r; dx <= r; dx += stepx) {
+                const float d2 = (float)(dx * dx + dy * dy);
+                if (d2 > maxD2 || d2 >= best) continue;
+                const int2 s = c + int2(dx, dy);
+                if (s.x < 0 || s.y < 0 || s.x >= (int)texW || s.y >= (int)texH) continue;
+                if (gNormal.Load(int3(s, 0)).w < 0.5) continue;
+                best  = d2;
+                q     = s;
+                found = true;
+            }
+        }
+    }
+    return found;
+}
+
 float4 PSMain(VSOut i) : SV_Target {
     int2   c = int2(i.pos.xy);
     float4 a = gNormal.Load(int3(c, 0));
-    if (a.w < 0.5) return float4(0, 0, 0, 1); // モデルが無い領域
 
-    float3 n = a.xyz;
-    float3 p = gPosition.Load(int3(c, 0)).xyz;
+    if (a.w < 0.5) {
+        // モデルが無い領域: pad > 0 なら最寄りのテクセルの値で埋める(UV島の境界の滲み/継ぎ目対策)
+        int2 q;
+        if (pad > 0 && FindNearestCovered(c, q)) {
+            float3 nq = gNormal.Load(int3(q, 0)).xyz;
+            float3 pq = gPosition.Load(int3(q, 0)).xyz;
+            float  v  = CurvatureValue(q, nq, pq);
+            return float4(v, v, v, 1);
+        }
+        return float4(0, 0, 0, 1);
+    }
 
-    float k = 0.5 * (DirCurvature(c, int2(1, 0), n, p) + DirCurvature(c, int2(0, 1), n, p));
-
-    float v = (mode == 0) ? saturate(0.5 + 0.5 * k * invRange)
-                          : saturate(abs(k) * invRange);
+    float v = CurvatureValue(c, a.xyz, gPosition.Load(int3(c, 0)).xyz);
     return float4(v, v, v, 1);
 }
