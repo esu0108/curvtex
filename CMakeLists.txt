@@ -132,6 +132,7 @@ add_executable(curvtex WIN32
   src/Bmp.h
   src/ImageWriter.cpp
   src/ImageWriter.h
+  src/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
   shaders/pass1.hlsl
   shaders/pass2.hlsl
   ${SHADER_HEADERS}

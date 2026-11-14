@@ -255,6 +255,18 @@ void DrawUI(AppState& s, Renderer& r, Actions& act) {
     ImGui::End();
 }
 
+// DPI 変更に何度でも追従できるよう、倍率適用前のスタイルを保持しておく。
+// (ScaleAllSizes は累積してしまうので、毎回「基準スタイル」から作り直す)
+ImGuiStyle g_baseStyle;
+bool       g_styleReady = false;
+
+void ApplyDpiScale(float scale) {
+    ImGuiStyle s = g_baseStyle;
+    s.ScaleAllSizes(scale);
+    s.FontScaleDpi    = scale;
+    ImGui::GetStyle() = s;
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;
     switch (msg) {
@@ -263,6 +275,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             g_renderer->Resize(LOWORD(lParam), HIWORD(lParam));
         }
         return 0;
+    case WM_DPICHANGED: {
+        // 別 DPI のモニタへ移動 / 表示倍率の変更。UI の倍率を更新し、OS 提案の矩形へ移す。
+        if (g_styleReady) ApplyDpiScale(static_cast<float>(LOWORD(wParam)) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));
+        const RECT* r = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) return 0; // Alt メニュー無効化
         break;
@@ -282,6 +301,7 @@ void SrvFree(ImGui_ImplDX12_InitInfo* info, D3D12_CPU_DESCRIPTOR_HANDLE cpu, D3D
 }
 
 int Run(HINSTANCE hInst, int nShow) {
+    // 通常は curvtex.manifest(PerMonitorV2) で宣言済み。マニフェストが無い場合のフォールバックとして残す。
     ImGui_ImplWin32_EnableDpiAwareness();
 
     WNDCLASSEXW wc{};
@@ -295,6 +315,10 @@ int Run(HINSTANCE hInst, int nShow) {
 
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"Curvature Baker", WS_OVERLAPPEDWINDOW, 100, 100, 1400, 850, nullptr, nullptr, hInst, nullptr);
     if (!hwnd) throw std::runtime_error("CreateWindow failed");
+
+    // 初期サイズは 96DPI 基準の論理サイズ。ウィンドウがあるモニタの DPI に合わせて拡大する。
+    const float initialDpi = ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd);
+    SetWindowPos(hwnd, nullptr, 0, 0, static_cast<int>(1400 * initialDpi), static_cast<int>(850 * initialDpi), SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     Renderer renderer;
     renderer.Init(hwnd);
@@ -311,10 +335,9 @@ int Run(HINSTANCE hInst, int nShow) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
 
-    const float dpi = ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd);
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(dpi);
-    style.FontScaleDpi = dpi;
+    g_baseStyle  = ImGui::GetStyle(); // 倍率適用前の基準スタイル(StyleColorsDark 済み)
+    g_styleReady = true;
+    ApplyDpiScale(ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd));
 
     // 日本語フォント(1.92以降は動的グリフ読み込みなので範囲指定は不要)
     for (const char* path : {"C:\\Windows\\Fonts\\meiryo.ttc", "C:\\Windows\\Fonts\\YuGothR.ttc", "C:\\Windows\\Fonts\\msgothic.ttc"}) {
