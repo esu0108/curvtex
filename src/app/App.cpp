@@ -109,13 +109,29 @@ int App::Run(int nShow) {
     window_.Show(nShow);
     InitImGui();
 
-    while (window_.PumpMessages()) {
+    constexpr DWORD kJobPollMs = 50; // ジョブ実行中に完了を確認する間隔 (最小化中など、描画しない間)
+    for (;;) {
+        bool hadMessage = false;
+        if (!window_.PumpMessages(hadMessage)) break;
+        if (hadMessage) redraw_ = kRedrawFrames;
+
         if (window_.IsMinimized()) {
-            Sleep(10);
+            if (PollJobs()) redraw_ = kRedrawFrames;
+            window_.WaitForMessage(JobsRunning() ? kJobPollMs : INFINITE);
             continue;
         }
 
-        PollJobs();
+        if (PollJobs()) redraw_ = kRedrawFrames;
+        // ジョブ実行中(スピナーの表示と完了確認)・再ベイク待ち・ドロップ待ちは、入力が無くても描く
+        if (JobsRunning() || (state_.hasMesh && state_.AnyDirty()) || hasPendingDrop_) redraw_ = std::max(redraw_, 1); // メッシュ無しではベイクされないので、フラグだけ立っていても無視する
+
+        if (redraw_ == 0) {
+            // 何も変わっていないので、入力が来るまで眠る。テキスト入力中だけはカーソル点滅のため定期的に起きる。
+            const bool blink = ImGui::GetIO().WantTextInput;
+            if (!window_.WaitForMessage(blink ? 250 : INFINITE)) redraw_ = 1;
+            continue;
+        }
+        --redraw_;
 
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -182,9 +198,12 @@ void App::StartRemesh() {
     loadJob_       = std::async(std::launch::async, [base = baseMesh_, smooth = state_.smoothNormals]() mutable { return BuildMeshJob<LoadResult>(std::string(), std::move(base), smooth); });
 }
 
-void App::PollJobs() {
+bool App::PollJobs() {
+    bool changed = false;
+
     // ---- 画像保存の完了確認 ----
     if (IsReady(saveJob_)) {
+        changed = true;
         const SaveResult sr = saveJob_.get();
         state_.saving       = false;
         state_.saveStatus   = sr.ok ? "保存しました: " + sr.message : "保存に失敗しました: " + sr.message;
@@ -192,6 +211,7 @@ void App::PollJobs() {
 
     // ---- モデル読み込みの完了確認 (GPUはアイドル) ----
     if (IsReady(loadJob_)) {
+        changed        = true;
         LoadResult r   = loadJob_.get();
         state_.loading = false;
         if (r.ok) {
@@ -200,7 +220,7 @@ void App::PollJobs() {
                 baseMesh_       = std::move(r.base);
                 state_.hasMesh  = true;
                 state_.hasBaked = true;
-                state_.dirty    = true;
+                state_.dirtyGeometry = true;
                 if (!loadIsRemesh_) {
                     state_.defaultMaxCurv = 4.0f / r.mesh.radius;
                     state_.maxCurv        = state_.defaultMaxCurv;
@@ -215,6 +235,7 @@ void App::PollJobs() {
             state_.modelStatus = (loadIsRemesh_ ? "メッシュ更新に失敗: " : "読み込み失敗: ") + r.err;
         }
     }
+    return changed;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +272,7 @@ void App::HandleActions(Actions& act) {
     }
     if (act.applySize) {
         bake_.Resize(static_cast<UINT>(state_.texW), static_cast<UINT>(state_.texH));
-        state_.dirty = true;
+        state_.dirtyGeometry = true;
     }
     if (act.browseSave) {
         const std::string p = SaveImageDialog(window_.Handle(), state_.savePath);
@@ -267,14 +288,23 @@ void App::RenderFrame() {
     if (drawView) view_.Resize(static_cast<UINT>(state_.viewReqW), static_cast<UINT>(state_.viewReqH)); // 記録前にサイズ追従
 
     renderer_.BeginFrame();
-    if (state_.dirty && state_.hasMesh) {
+    if (state_.hasMesh && state_.AnyDirty()) {
+        // 上流が変わったら下流も作り直す (ジオメトリ → パディング → シェーディング)
+        if (state_.dirtyGeometry) {
+            bake_.RecordGeometry(gpuMesh_);
+            state_.dirtyPadding = true;
+        }
+        if (state_.dirtyPadding) {
+            bake_.RecordPadding(static_cast<uint32_t>(state_.padding));
+            state_.dirtyShading = true;
+        }
         BakePass::Params p;
         p.invRange = 1.0f / std::max(state_.maxCurv, 1e-6f);
         p.mode     = static_cast<uint32_t>(state_.mode);
         p.radius   = static_cast<uint32_t>(state_.sampleRadius);
         p.padding  = static_cast<uint32_t>(state_.padding);
-        bake_.Record(gpuMesh_, p);
-        state_.dirty = false;
+        bake_.RecordShading(p);
+        state_.dirtyGeometry = state_.dirtyPadding = state_.dirtyShading = false;
     }
     if (drawView) {
         float mvp[16], view[16];

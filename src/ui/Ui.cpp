@@ -58,22 +58,22 @@ void DrawSettingsPanel(AppState& s, const BakePass& bake, Actions& act) {
     ImGui::TextDisabled("現在: %u x %u", bake.Width(), bake.Height());
 
     ImGui::SeparatorText("曲率");
-    if (ImGui::RadioButton("符号付き (0.5=平坦, 凸>0.5, 凹<0.5)", &s.mode, 0)) s.dirty = true;
-    if (ImGui::RadioButton("絶対値 (0=平坦)", &s.mode, 1)) s.dirty = true;
+    if (ImGui::RadioButton("符号付き (0.5=平坦, 凸>0.5, 凹<0.5)", &s.mode, 0)) s.dirtyShading = true;
+    if (ImGui::RadioButton("絶対値 (0=平坦)", &s.mode, 1)) s.dirtyShading = true;
     ImGui::Text("サンプル幅 (テクセル)");
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##radius", &s.sampleRadius, 1, 16)) s.dirty = true;
+    if (ImGui::SliderInt("##radius", &s.sampleRadius, 1, 16)) s.dirtyShading = true;
     ImGui::TextDisabled("大きいほど滑らか。小さいと三角形ごとの段差が出ます");
     ImGui::Text("パディング (テクセル)");
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##padding", &s.padding, 0, 256, "%d", ImGuiSliderFlags_Logarithmic)) s.dirty = true;
+    if (ImGui::SliderInt("##padding", &s.padding, 0, 256, "%d", ImGuiSliderFlags_Logarithmic)) s.dirtyPadding = true;
     ImGui::TextDisabled("UV島の外側を最寄りの値で塗り広げ、継ぎ目の黒い線を防ぎます");
     ImGui::Text("最大曲率 (1/単位長)");
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderFloat("##kmax", &s.maxCurv, 1e-3f, 1e4f, "%.4f", ImGuiSliderFlags_Logarithmic)) s.dirty = true;
+    if (ImGui::SliderFloat("##kmax", &s.maxCurv, 1e-3f, 1e4f, "%.4f", ImGuiSliderFlags_Logarithmic)) s.dirtyShading = true;
     if (ImGui::Button("初期値に戻す")) {
-        s.maxCurv = s.defaultMaxCurv;
-        s.dirty   = true;
+        s.maxCurv      = s.defaultMaxCurv;
+        s.dirtyShading = true;
     }
     ImGui::TextWrapped("この曲率で出力が0/1に飽和します。半径Rの球の曲率は 1/R です。");
 

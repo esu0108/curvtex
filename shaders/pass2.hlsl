@@ -5,6 +5,7 @@ cbuffer CB : register(b0) {
     uint  mode;     // 0: 符号付き(0.5=平坦, 凸>0.5), 1: 絶対値
     uint  radius;   // 差分のサンプル幅(テクセル)。大きいほど滑らか
     uint  pad;      // UV島の外側へ塗り広げる幅(テクセル)。0 で無効
+    float invMeshRadius; // 1 / メッシュの境界球半径 (位置は半径で正規化されているので、曲率を元の単位へ戻す)
 };
 
 Texture2D<float4> gNormal   : register(t0);
@@ -54,7 +55,8 @@ float DirCurvature(int2 c, int2 d, float3 n0, float3 p0) {
 
 // テクセル c の曲率を 0..1 に正規化して返す
 float CurvatureValue(int2 c, float3 n, float3 p) {
-    float k = 0.5 * (DirCurvature(c, int2(1, 0), n, p) + DirCurvature(c, int2(0, 1), n, p));
+    // DirCurvature は正規化した位置で計算しているので、半径で割って 1/単位長 に戻す
+    float k = 0.5 * (DirCurvature(c, int2(1, 0), n, p) + DirCurvature(c, int2(0, 1), n, p)) * invMeshRadius;
     return (mode == 0) ? saturate(0.5 + 0.5 * k * invRange)
                        : saturate(abs(k) * invRange);
 }

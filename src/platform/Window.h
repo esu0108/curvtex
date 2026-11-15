@@ -21,7 +21,11 @@ public:
     void Destroy();
 
     // 溜まっているメッセージを処理する。WM_QUIT を受け取ったら false。
-    bool PumpMessages();
+    // 1件でも処理したら hadMessage が true になる (入力があったので再描画が必要、の合図に使う)。
+    bool PumpMessages(bool& hadMessage);
+
+    // 新しいメッセージが来るか timeoutMs が経つまで眠る (INFINITE で無期限)。メッセージが来て起きたら true、タイムアウトなら false。
+    bool WaitForMessage(DWORD timeoutMs);
 
     HWND Handle() const { return hwnd_; }
     bool IsMinimized() const { return IsIconic(hwnd_) != FALSE; }

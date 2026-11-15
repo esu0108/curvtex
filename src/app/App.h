@@ -42,7 +42,7 @@ private:
     void ShutdownImGui();
     void ApplyDpiScale(float scale);
 
-    void PollJobs();
+    bool PollJobs(); // 状態が変わったら true
     void HandleDrop(Actions& act);
     void HandleActions(Actions& act);
     void RenderFrame();
@@ -64,6 +64,12 @@ private:
     std::future<LoadResult> loadJob_;
     bool                    loadIsRemesh_ = false;
     std::future<SaveResult> saveJob_;
+
+    // 再描画の要否。入力などがあれば kRedrawFrames まで引き上げ、描くたびに減らす。0 の間はメッセージ待ちで眠る。
+    // (ImGui は入力の反映に数フレームかかるので、入力後は少し多めに描く)
+    static constexpr int kRedrawFrames = 3;
+    int                  redraw_       = kRedrawFrames;
+    bool                 JobsRunning() const { return state_.loading || state_.saving; }
 
     std::filesystem::path pendingDrop_; // ドロップされたファイル (次のフレームで処理)
     bool                  hasPendingDrop_ = false;

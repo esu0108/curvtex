@@ -72,8 +72,8 @@ void Renderer::Init(HWND hwnd) {
     for (UINT i = kSrvHeapSize; i-- > Slot::kSrvReserved;) freeSrv_.push_back(i);
 
     // コマンド関連
-    Check(device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&cmdAlloc_)), "CreateCommandAllocator");
-    Check(device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc_.Get(), nullptr, IID_PPV_ARGS(&cmdList_)), "CreateCommandList");
+    for (auto& a : cmdAlloc_) Check(device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&a)), "CreateCommandAllocator");
+    Check(device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc_[0].Get(), nullptr, IID_PPV_ARGS(&cmdList_)), "CreateCommandList");
     cmdList_->Close();
     Check(device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)), "CreateFence");
     fenceEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -90,14 +90,18 @@ void Renderer::Shutdown() {
     }
 }
 
+void Renderer::WaitForFence(UINT64 value) {
+    if (fence_->GetCompletedValue() >= value) return;
+    Check(fence_->SetEventOnCompletion(value, fenceEvent_), "SetEventOnCompletion");
+    WaitForSingleObject(fenceEvent_, INFINITE);
+}
+
+// キューに積んだ全ての仕事(進行中のフレームを含む)の完了を待つ
 void Renderer::WaitIdle() {
     if (!queue_ || !fence_) return;
     const UINT64 v = ++fenceValue_;
     Check(queue_->Signal(fence_.Get(), v), "Signal");
-    if (fence_->GetCompletedValue() < v) {
-        Check(fence_->SetEventOnCompletion(v, fenceEvent_), "SetEventOnCompletion");
-        WaitForSingleObject(fenceEvent_, INFINITE);
-    }
+    WaitForFence(v);
 }
 
 void Renderer::CreateBackBuffers() {
@@ -123,8 +127,11 @@ void Renderer::Resize(UINT width, UINT height) {
 // フレーム
 // ----------------------------------------------------------------------------
 void Renderer::BeginFrame() {
-    Check(cmdAlloc_->Reset(), "CommandAllocator::Reset");
-    Check(cmdList_->Reset(cmdAlloc_.Get(), nullptr), "CommandList::Reset");
+    // このスロットのアロケータを最後に使ったフレーム(2フレーム前)が終わるまで待つ。
+    // ImGui の DX12 バックエンドも「フレームごとのバッファ」を同じ周期で使い回すので、ここで同期が取れる。
+    WaitForFence(frameFence_[frameSlot_]);
+    Check(cmdAlloc_[frameSlot_]->Reset(), "CommandAllocator::Reset");
+    Check(cmdList_->Reset(cmdAlloc_[frameSlot_].Get(), nullptr), "CommandList::Reset");
 }
 
 void Renderer::BeginBackbuffer(float r, float g, float b) {
@@ -156,13 +163,17 @@ void Renderer::EndFrame() {
     ID3D12CommandList* lists[] = {cmdList_.Get()};
     queue_->ExecuteCommandLists(1, lists);
     Check(swapchain_->Present(1, 0), "Present");
-    WaitIdle(); // ツール用途なので毎フレーム完了待ち(シンプルさ優先)
+
+    // このフレームの完了を fence で追跡する。待つのは次に同じスロットを使う時(BeginFrame)。
+    frameFence_[frameSlot_] = ++fenceValue_;
+    Check(queue_->Signal(fence_.Get(), frameFence_[frameSlot_]), "Signal");
+    frameSlot_ = (frameSlot_ + 1) % kBackBufferCount;
 }
 
 void Renderer::ExecuteImmediate(const std::function<void(ID3D12GraphicsCommandList*)>& record) {
-    WaitIdle();
-    Check(cmdAlloc_->Reset(), "CommandAllocator::Reset");
-    Check(cmdList_->Reset(cmdAlloc_.Get(), nullptr), "CommandList::Reset");
+    WaitIdle(); // 全アロケータが空になるので、次に使うスロットのものを安全に Reset できる
+    Check(cmdAlloc_[frameSlot_]->Reset(), "CommandAllocator::Reset");
+    Check(cmdList_->Reset(cmdAlloc_[frameSlot_].Get(), nullptr), "CommandList::Reset");
     record(cmdList_.Get());
     Check(cmdList_->Close(), "CommandList::Close");
     ID3D12CommandList* lists[] = {cmdList_.Get()};

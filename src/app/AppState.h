@@ -23,7 +23,11 @@ struct AppState {
     // ---- 進行状況 (App が更新する) ----
     bool hasMesh  = false;
     bool hasBaked = false;
-    bool dirty    = false; // true なら次のフレームで再ベイクする
+    // 再ベイクが必要な段階 (上流が立てば下流も実行される。BakePass の説明を参照)
+    bool dirtyGeometry = false; // モデル / テクスチャサイズ
+    bool dirtyPadding  = false; // パディング幅
+    bool dirtyShading  = false; // モード / サンプル幅 / 最大曲率
+    bool AnyDirty() const { return dirtyGeometry || dirtyPadding || dirtyShading; }
     bool loading  = false; // モデル読み込み/メッシュ更新ジョブが実行中
     bool saving   = false; // 画像保存ジョブが実行中
 

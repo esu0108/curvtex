@@ -21,7 +21,10 @@ namespace {
 // 法線バッファの形式。単位法線は [-1,1] に収まるので 16bit SNORM で足りる(精度は一様に約3e-5)。
 // 16bit FLOAT は 1 付近で精度が粗く(約5e-4)、曲率の差分計算にノイズが乗るので使わない。
 constexpr DXGI_FORMAT kNormalFormat   = DXGI_FORMAT_R16G16B16A16_SNORM;
-constexpr DXGI_FORMAT kPositionFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
+// 位置はメッシュの境界球で正規化して [-1,1] に収め、法線と同じ 16bit SNORM で持つ(精度は半径の約3e-5で一様)。
+// 曲率は (法線の差)/(位置の差) の比なので、位置の量子化誤差は曲率に数%以下の相対誤差として現れるだけで、
+// 平坦な面にノイズを足すことはない。気になる場合は DXGI_FORMAT_R32G32B32A32_FLOAT に戻せばよい。
+constexpr DXGI_FORMAT kPositionFormat = DXGI_FORMAT_R16G16B16A16_SNORM;
 constexpr DXGI_FORMAT kResultFormat   = DXGI_FORMAT_R8G8B8A8_UNORM;
 constexpr DXGI_FORMAT kSeedFormat     = DXGI_FORMAT_R16G16_UINT; // 最寄りのテクセル座標 (最大 4096 なので 16bit で足りる)
 
@@ -32,8 +35,16 @@ struct Pass2Constants {
     uint32_t mode;
     uint32_t radius;
     uint32_t pad;
+    float    invMeshRadius;
 };
 constexpr UINT kPass2ConstantCount = sizeof(Pass2Constants) / sizeof(uint32_t);
+
+// パス1のルート定数 (shaders/pass1.hlsl の cbuffer と同じ並び)
+struct Pass1Constants {
+    float center[3];
+    float invRadius;
+};
+constexpr UINT kPass1ConstantCount = sizeof(Pass1Constants) / sizeof(uint32_t);
 
 // ジャンプフラッディングのルート定数 (shaders/jfa.hlsl の cbuffer と同じ並び)
 struct JfaConstants {
@@ -71,6 +82,7 @@ void BakePass::CreateTargets(UINT w, UINT h) {
     result_.Reset();
     seed_[0].Reset();
     seed_[1].Reset();
+    geometryReady_ = false;
     w_ = w;
     h_ = h;
 
@@ -93,9 +105,17 @@ void BakePass::CreatePipelines() {
 
     // ---- パス1 ---------------------------------------------------------
     {
+        D3D12_ROOT_PARAMETER param{};
+        param.ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        param.Constants.ShaderRegister = 0;
+        param.Constants.Num32BitValues = kPass1ConstantCount;
+        param.ShaderVisibility         = D3D12_SHADER_VISIBILITY_VERTEX;
+
         D3D12_ROOT_SIGNATURE_DESC rsd{};
-        rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-        rs1_      = MakeRootSignature(dev, rsd);
+        rsd.NumParameters = 1;
+        rsd.pParameters   = &param;
+        rsd.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+        rs1_              = MakeRootSignature(dev, rsd);
 
         const auto layout = GpuMesh::InputLayout();
 
@@ -212,8 +232,11 @@ void BakePass::CreatePipelines() {
     }
 }
 
-UINT BakePass::RecordJumpFlood(uint32_t padding, const D3D12_VIEWPORT& vp, const D3D12_RECT& sc) {
+UINT BakePass::RecordJumpFlood(uint32_t padding) {
     auto* cl = r_->CommandList();
+
+    const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(w_), static_cast<float>(h_), 0.f, 1.f};
+    const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
 
     const D3D12_CPU_DESCRIPTOR_HANDLE rtv[2] = {r_->RtvCpu(Slot::kRtvSeedA), r_->RtvCpu(Slot::kRtvSeedB)};
     const UINT                        srv[2] = {Slot::kSrvSeedA, Slot::kSrvSeedB};
@@ -258,7 +281,7 @@ UINT BakePass::RecordJumpFlood(uint32_t padding, const D3D12_VIEWPORT& vp, const
     return srv[cur];
 }
 
-void BakePass::Record(const GpuMesh& mesh, const Params& params) {
+void BakePass::RecordGeometry(const GpuMesh& mesh) {
     if (!mesh.Valid()) return;
     auto* cl = r_->CommandList();
 
@@ -266,63 +289,74 @@ void BakePass::Record(const GpuMesh& mesh, const Params& params) {
     const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
     const float          clear[4] = {0.f, 0.f, 0.f, 0.f};
 
-    // ---- パス1: 法線 + 位置 を UV空間へ ----
-    {
-        D3D12_RESOURCE_BARRIER b[2] = {
-            Transition(normal_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-            Transition(position_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        };
-        cl->ResourceBarrier(2, b);
+    // ---- パス1: 法線 + 位置(中心・半径で正規化) を UV空間へ ----
+    invMeshRadius_ = 1.0f / mesh.Radius();
+    const Pass1Constants cb{{mesh.Center()[0], mesh.Center()[1], mesh.Center()[2]}, invMeshRadius_};
 
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvs[2] = {r_->RtvCpu(Slot::kRtvNormal), r_->RtvCpu(Slot::kRtvPosition)};
-        cl->OMSetRenderTargets(2, rtvs, FALSE, nullptr);
-        cl->ClearRenderTargetView(rtvs[0], clear, 0, nullptr);
-        cl->ClearRenderTargetView(rtvs[1], clear, 0, nullptr);
-        cl->RSSetViewports(1, &vp);
-        cl->RSSetScissorRects(1, &sc);
-        cl->SetGraphicsRootSignature(rs1_.Get());
-        cl->SetPipelineState(pso1_.Get());
-        cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        mesh.Draw(cl);
+    D3D12_RESOURCE_BARRIER b[2] = {
+        Transition(normal_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
+        Transition(position_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
+    };
+    cl->ResourceBarrier(2, b);
 
-        D3D12_RESOURCE_BARRIER back[2] = {
-            Transition(normal_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-            Transition(position_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-        };
-        cl->ResourceBarrier(2, back);
-    }
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvs[2] = {r_->RtvCpu(Slot::kRtvNormal), r_->RtvCpu(Slot::kRtvPosition)};
+    cl->OMSetRenderTargets(2, rtvs, FALSE, nullptr);
+    cl->ClearRenderTargetView(rtvs[0], clear, 0, nullptr);
+    cl->ClearRenderTargetView(rtvs[1], clear, 0, nullptr);
+    cl->RSSetViewports(1, &vp);
+    cl->RSSetScissorRects(1, &sc);
+    cl->SetGraphicsRootSignature(rs1_.Get());
+    cl->SetPipelineState(pso1_.Get());
+    cl->SetGraphicsRoot32BitConstants(0, kPass1ConstantCount, &cb, 0);
+    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    mesh.Draw(cl);
 
-    // ---- ジャンプフラッディング (パディング有効時のみ) ----
-    // 無効なら seed は読まれないので、どちらのテクスチャを指していてもよい。
-    UINT seedSlot = Slot::kSrvSeedA;
-    if (params.padding > 0) seedSlot = RecordJumpFlood(params.padding, vp, sc);
+    D3D12_RESOURCE_BARRIER back[2] = {
+        Transition(normal_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+        Transition(position_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+    };
+    cl->ResourceBarrier(2, back);
+    geometryReady_ = true;
+}
+
+void BakePass::RecordPadding(uint32_t padding) {
+    if (!geometryReady_) return;
+    // パディング無効なら seed は読まれないので、どちらのテクスチャを指していてもよい。
+    seedSlot_ = (padding > 0) ? RecordJumpFlood(padding) : Slot::kSrvSeedA;
+}
+
+void BakePass::RecordShading(const Params& params) {
+    if (!geometryReady_) return;
+    auto* cl = r_->CommandList();
+
+    const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(w_), static_cast<float>(h_), 0.f, 1.f};
+    const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
+    const float          clear[4] = {0.f, 0.f, 0.f, 0.f};
 
     // ---- パス2: 法線から曲率 (+ パディング) ----
-    {
-        const Pass2Constants cb{w_, h_, params.invRange, params.mode, params.radius, params.padding};
+    const Pass2Constants cb{w_, h_, params.invRange, params.mode, params.radius, params.padding, invMeshRadius_};
 
-        D3D12_RESOURCE_BARRIER toRt = Transition(result_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        cl->ResourceBarrier(1, &toRt);
+    D3D12_RESOURCE_BARRIER toRt = Transition(result_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cl->ResourceBarrier(1, &toRt);
 
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv = r_->RtvCpu(Slot::kRtvResult);
-        cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-        cl->ClearRenderTargetView(rtv, clear, 0, nullptr);
-        cl->RSSetViewports(1, &vp);
-        cl->RSSetScissorRects(1, &sc);
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = r_->RtvCpu(Slot::kRtvResult);
+    cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    cl->ClearRenderTargetView(rtv, clear, 0, nullptr);
+    cl->RSSetViewports(1, &vp);
+    cl->RSSetScissorRects(1, &sc);
 
-        ID3D12DescriptorHeap* heaps[] = {r_->SrvHeap()};
-        cl->SetDescriptorHeaps(1, heaps);
-        cl->SetGraphicsRootSignature(rs2_.Get());
-        cl->SetPipelineState(pso2_.Get());
-        cl->SetGraphicsRoot32BitConstants(0, kPass2ConstantCount, &cb, 0);
-        cl->SetGraphicsRootDescriptorTable(1, r_->SrvGpu(Slot::kSrvNormal)); // t0=normal, t1=position
-        cl->SetGraphicsRootDescriptorTable(2, r_->SrvGpu(seedSlot));         // t2=最寄りのテクセル座標
-        cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cl->DrawInstanced(3, 1, 0, 0);
+    ID3D12DescriptorHeap* heaps[] = {r_->SrvHeap()};
+    cl->SetDescriptorHeaps(1, heaps);
+    cl->SetGraphicsRootSignature(rs2_.Get());
+    cl->SetPipelineState(pso2_.Get());
+    cl->SetGraphicsRoot32BitConstants(0, kPass2ConstantCount, &cb, 0);
+    cl->SetGraphicsRootDescriptorTable(1, r_->SrvGpu(Slot::kSrvNormal)); // t0=normal, t1=position
+    cl->SetGraphicsRootDescriptorTable(2, r_->SrvGpu(seedSlot_));        // t2=最寄りのテクセル座標
+    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cl->DrawInstanced(3, 1, 0, 0);
 
-        D3D12_RESOURCE_BARRIER b = Transition(result_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-        cl->ResourceBarrier(1, &b);
-    }
+    D3D12_RESOURCE_BARRIER b = Transition(result_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cl->ResourceBarrier(1, &b);
 }
 
 bool BakePass::Readback(std::vector<uint8_t>& rgba) {

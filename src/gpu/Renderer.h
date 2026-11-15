@@ -33,6 +33,8 @@ constexpr UINT kSrvReserved = 6;
 // DirectX12 の土台: デバイス / キュー / スワップチェーン / ディスクリプタヒープ / フェンス / コマンドリスト。
 // 描画内容は持たず、ベイクは BakePass、3Dビューは ViewPass、メッシュは GpuMesh が担当する。
 // 1フレームの流れ:  BeginFrame → (各パスの Record) → BeginBackbuffer → (ImGui 描画) → EndFrame
+// フレームは kBackBufferCount 枚まで同時に GPU へ投げられる(CPU は GPU の2フレーム先まで進める)。
+// リソースの作り直しや読み戻しなど、GPU の使用中に触れない操作の前には WaitIdle() を呼ぶこと。
 class Renderer {
 public:
     static constexpr UINT        kBackBufferCount = 2;
@@ -68,16 +70,19 @@ public:
 
 private:
     void CreateBackBuffers();
+    void WaitForFence(UINT64 value); // fence が value に達するまで待つ
 
     ComPtr<ID3D12Device>              device_;
     ComPtr<IDXGIFactory4>             factory_;
     ComPtr<ID3D12CommandQueue>        queue_;
     ComPtr<IDXGISwapChain3>           swapchain_;
-    ComPtr<ID3D12CommandAllocator>    cmdAlloc_;
+    ComPtr<ID3D12CommandAllocator>    cmdAlloc_[kBackBufferCount]; // フレームごと (GPU が使い終わるまで Reset できない)
     ComPtr<ID3D12GraphicsCommandList> cmdList_;
     ComPtr<ID3D12Fence>               fence_;
     HANDLE                            fenceEvent_ = nullptr;
-    UINT64                            fenceValue_ = 0;
+    UINT64                            fenceValue_ = 0;                // 最後に Signal した値
+    UINT64                            frameFence_[kBackBufferCount] = {}; // そのフレームの完了を表す fence 値
+    UINT                              frameSlot_ = 0;                 // 次に記録するフレームのスロット
 
     ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     ComPtr<ID3D12DescriptorHeap> dsvHeap_;

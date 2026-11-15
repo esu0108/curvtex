@@ -63,9 +63,15 @@ void Window::Destroy() {
     }
 }
 
-bool Window::PumpMessages() {
+bool Window::WaitForMessage(DWORD timeoutMs) {
+    return MsgWaitForMultipleObjects(0, nullptr, FALSE, timeoutMs, QS_ALLINPUT) == WAIT_OBJECT_0;
+}
+
+bool Window::PumpMessages(bool& hadMessage) {
+    hadMessage = false;
     MSG msg{};
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+        hadMessage = true;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
         if (msg.message == WM_QUIT) return false;
