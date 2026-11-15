@@ -1,9 +1,9 @@
 #pragma once
 #include <array>
 
-#include "GpuUtil.h"
-#include "Mesh.h"
-#include "Renderer.h"
+#include "gpu/GpuUtil.h"
+#include "mesh/Mesh.h"
+#include "gpu/Renderer.h"
 
 // GPU 上の頂点/インデックスバッファ。ベイク(パス1)と3Dビューで共有する。
 class GpuMesh {

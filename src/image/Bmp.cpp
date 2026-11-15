@@ -1,4 +1,4 @@
-#include "Bmp.h"
+#include "image/Bmp.h"
 
 #include <Windows.h>
 

@@ -115,6 +115,9 @@ add_shader(pass1_vs pass1.hlsl VSMain vs_5_0 g_Pass1VS)
 add_shader(pass1_ps pass1.hlsl PSMain ps_5_0 g_Pass1PS)
 add_shader(pass2_vs pass2.hlsl VSMain vs_5_0 g_Pass2VS)
 add_shader(pass2_ps pass2.hlsl PSMain ps_5_0 g_Pass2PS)
+add_shader(jfa_vs      jfa.hlsl  VSMain  vs_5_0 g_JfaVS)
+add_shader(jfa_init_ps jfa.hlsl  PSInit  ps_5_0 g_JfaInitPS)
+add_shader(jfa_step_ps jfa.hlsl  PSStep  ps_5_0 g_JfaStepPS)
 add_shader(view_vs  view.hlsl  VSMain vs_5_0 g_ViewVS)
 add_shader(view_ps  view.hlsl  PSMain ps_5_0 g_ViewPS)
 
@@ -123,57 +126,59 @@ find_package(Threads REQUIRED) # rapidobj は std::thread を使用
 
 add_executable(curvtex WIN32
   # アプリ
-  src/main.cpp
-  src/App.cpp
-  src/App.h
-  src/AppState.h
-  src/Camera.cpp
-  src/Camera.h
-  src/Dialogs.cpp
-  src/Dialogs.h
-  src/Ui.cpp
-  src/Ui.h
-  src/Window.cpp
-  src/Window.h
-  src/PathUtil.h
-  # DirectX12
-  src/Renderer.cpp
-  src/Renderer.h
-  src/GpuUtil.cpp
-  src/GpuUtil.h
-  src/GpuMesh.cpp
-  src/GpuMesh.h
-  src/BakePass.cpp
-  src/BakePass.h
-  src/ViewPass.cpp
-  src/ViewPass.h
-  # モデル読み込み
-  src/Mesh.cpp
-  src/Mesh.h
-  src/MeshBuild.cpp
-  src/MeshBuild.h
-  src/MeshUtil.h
-  src/MeshGltf.cpp
-  src/MeshFbx.cpp
-  # 画像書き出し
-  src/Bmp.cpp
-  src/Bmp.h
-  src/ImageWriter.cpp
-  src/ImageWriter.h
-  # リソース
-  src/curvtex.rc
-  src/resource.h
+  src/app/main.cpp
+  src/app/App.cpp
+  src/app/App.h
+  src/app/AppState.h
+  # UI
+  src/ui/Ui.cpp
+  src/ui/Ui.h
+  src/ui/Camera.cpp
+  src/ui/Camera.h
+  # プラットフォーム(Win32)
+  src/platform/Window.cpp
+  src/platform/Window.h
+  src/platform/Dialogs.cpp
+  src/platform/Dialogs.h
+  src/platform/PathUtil.h
+  src/platform/resource.h
+  src/platform/curvtex.rc
   res/icon.ico
-  src/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
+  src/platform/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
+  # DirectX12
+  src/gpu/Renderer.cpp
+  src/gpu/Renderer.h
+  src/gpu/GpuUtil.cpp
+  src/gpu/GpuUtil.h
+  src/gpu/GpuMesh.cpp
+  src/gpu/GpuMesh.h
+  src/gpu/BakePass.cpp
+  src/gpu/BakePass.h
+  src/gpu/ViewPass.cpp
+  src/gpu/ViewPass.h
+  # モデル読み込み
+  src/mesh/Mesh.cpp
+  src/mesh/Mesh.h
+  src/mesh/MeshBuild.cpp
+  src/mesh/MeshBuild.h
+  src/mesh/MeshUtil.h
+  src/mesh/MeshGltf.cpp
+  src/mesh/MeshFbx.cpp
+  # 画像書き出し
+  src/image/ImageWriter.cpp
+  src/image/ImageWriter.h
+  src/image/Bmp.cpp
+  src/image/Bmp.h
   # シェーダ
   shaders/pass1.hlsl
   shaders/pass2.hlsl
+  shaders/jfa.hlsl
   shaders/view.hlsl
   ${SHADER_HEADERS}
 )
 
 # .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
-set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
+set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl shaders/jfa.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include

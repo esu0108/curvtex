@@ -2,13 +2,15 @@
 #include <cstdint>
 #include <vector>
 
-#include "GpuMesh.h"
-#include "GpuUtil.h"
-#include "Renderer.h"
+#include "gpu/GpuMesh.h"
+#include "gpu/GpuUtil.h"
+#include "gpu/Renderer.h"
 
 // 曲率のベイク。
 //   パス1: VS で UV を SV_POSITION として出力 → PS で 法線/位置 を UV空間テクスチャへ書き出す
-//   パス2: フルスクリーン PS で 法線(と位置)から曲率を計算し、結果テクスチャへ書き出す
+//   (パディング有効時) ジャンプフラッディング: モデルのあるテクセルから「最も近いテクセルの座標」を全体へ伝播させる
+//   パス2: フルスクリーン PS で 法線(と位置)から曲率を計算し、結果テクスチャへ書き出す。
+//          モデルの無いテクセルは、ジャンプフラッディングで求めた最寄りのテクセルの値で埋める(パディング)
 class BakePass {
 public:
     struct Params {
@@ -33,10 +35,14 @@ private:
     void CreatePipelines();
     void CreateTargets(UINT w, UINT h);
 
+    // ジャンプフラッディングを記録し、最終結果が入った SRV スロットを返す。
+    UINT RecordJumpFlood(uint32_t padding, const D3D12_VIEWPORT& vp, const D3D12_RECT& sc);
+
     Renderer* r_ = nullptr;
     UINT      w_ = 1024, h_ = 1024;
 
     gpu::ComPtr<ID3D12Resource>      normal_, position_, result_;
-    gpu::ComPtr<ID3D12RootSignature> rs1_, rs2_;
-    gpu::ComPtr<ID3D12PipelineState> pso1_, pso2_;
+    gpu::ComPtr<ID3D12Resource>      seed_[2]; // ジャンプフラッディングのピンポン用 (R16G16_UINT: 最寄りのテクセル座標)
+    gpu::ComPtr<ID3D12RootSignature> rs1_, rs2_, rsJfaInit_, rsJfaStep_;
+    gpu::ComPtr<ID3D12PipelineState> pso1_, pso2_, psoJfaInit_, psoJfaStep_;
 };

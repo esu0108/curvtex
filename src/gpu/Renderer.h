@@ -16,6 +16,8 @@ constexpr UINT kRtvNormal   = 2;
 constexpr UINT kRtvPosition = 3;
 constexpr UINT kRtvResult   = 4;
 constexpr UINT kRtvView     = 5;
+constexpr UINT kRtvSeedA    = 6; // ジャンプフラッディングのピンポン用
+constexpr UINT kRtvSeedB    = 7;
 constexpr UINT kRtvCount    = 8;
 // SRV ヒープ: kSrvNormal と kSrvPosition は連続している必要がある(パス2が1つのテーブルで読む)。
 // kSrvReserved 以降は ImGui が使う。
@@ -23,7 +25,9 @@ constexpr UINT kSrvNormal   = 0;
 constexpr UINT kSrvPosition = 1;
 constexpr UINT kSrvResult   = 2;
 constexpr UINT kSrvView     = 3;
-constexpr UINT kSrvReserved = 4;
+constexpr UINT kSrvSeedA    = 4;
+constexpr UINT kSrvSeedB    = 5;
+constexpr UINT kSrvReserved = 6;
 } // namespace Slot
 
 // DirectX12 の土台: デバイス / キュー / スワップチェーン / ディスクリプタヒープ / フェンス / コマンドリスト。

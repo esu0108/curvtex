@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-#include "Camera.h"
+#include "ui/Camera.h"
 
 // UI が読み書きするアプリの状態 (描画・ファイル処理は App が担当する)。
 struct AppState {

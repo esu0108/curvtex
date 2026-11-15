@@ -1,4 +1,4 @@
-#include "Camera.h"
+#include "ui/Camera.h"
 
 #include <DirectXMath.h>
 

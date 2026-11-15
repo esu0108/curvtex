@@ -1,8 +1,8 @@
 #pragma once
-#include "BakePass.h"
-#include "GpuMesh.h"
-#include "GpuUtil.h"
-#include "Renderer.h"
+#include "gpu/BakePass.h"
+#include "gpu/GpuMesh.h"
+#include "gpu/GpuUtil.h"
+#include "gpu/Renderer.h"
 
 // 3Dビュー: 曲率テクスチャ(BakePass の結果)を貼ったモデルをオフスクリーンへ描く。
 // 描いた結果は ImGui::Image で表示する。

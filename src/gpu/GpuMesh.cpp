@@ -1,4 +1,4 @@
-#include "GpuMesh.h"
+#include "gpu/GpuMesh.h"
 
 #include <cstddef>
 

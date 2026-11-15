@@ -1,5 +1,5 @@
 #pragma once
-#include "Mesh.h"
+#include "mesh/Mesh.h"
 
 // オービットカメラ (Y-up, 右手系)。距離・移動量はモデルの境界球半径を 1 とした単位。
 struct OrbitCamera {

@@ -2,7 +2,7 @@
 
 #include <exception>
 
-#include "App.h"
+#include "app/App.h"
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nShow) {
     try {

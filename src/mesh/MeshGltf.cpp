@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "Mesh.h"
-#include "MeshBuild.h"
-#include "MeshUtil.h"
+#include "mesh/Mesh.h"
+#include "mesh/MeshBuild.h"
+#include "mesh/MeshUtil.h"
 
 // accessor ツールで直接読み込むための単純な型(fastgltf::math のベクトル型に依存しない)
 struct GltfV2 {

@@ -1,7 +1,7 @@
 #pragma once
 #include <cmath>
 
-#include "Mesh.h"
+#include "mesh/Mesh.h"
 
 // ノード変換(アフィン変換)の共通処理。glTF / FBX ローダー双方で使う。
 // 外部ライブラリの行列型に依存しないよう、列ベクトルを素の配列で保持する。

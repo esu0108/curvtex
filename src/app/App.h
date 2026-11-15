@@ -6,13 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "AppState.h"
-#include "BakePass.h"
-#include "GpuMesh.h"
-#include "Mesh.h"
-#include "Renderer.h"
-#include "ViewPass.h"
-#include "Window.h"
+#include "app/AppState.h"
+#include "gpu/BakePass.h"
+#include "gpu/GpuMesh.h"
+#include "mesh/Mesh.h"
+#include "gpu/Renderer.h"
+#include "gpu/ViewPass.h"
+#include "platform/Window.h"
 
 #include "imgui.h"
 

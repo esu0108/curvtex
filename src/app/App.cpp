@@ -1,4 +1,4 @@
-#include "App.h"
+#include "app/App.h"
 
 #include <algorithm>
 #include <chrono>
@@ -6,10 +6,10 @@
 #include <exception>
 #include <utility>
 
-#include "Dialogs.h"
-#include "ImageWriter.h"
-#include "PathUtil.h"
-#include "Ui.h"
+#include "platform/Dialogs.h"
+#include "image/ImageWriter.h"
+#include "platform/PathUtil.h"
+#include "ui/Ui.h"
 
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"

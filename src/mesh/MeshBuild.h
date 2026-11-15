@@ -2,7 +2,7 @@
 #include <filesystem>
 #include <string>
 
-#include "Mesh.h"
+#include "mesh/Mesh.h"
 
 // ローダー(OBJ / glTF / FBX)で共通の組み立て処理。
 

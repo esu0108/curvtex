@@ -1,9 +1,9 @@
-#include "Renderer.h"
+#include "gpu/Renderer.h"
 
 #include <stdexcept>
 #include <vector>
 
-#include "GpuUtil.h"
+#include "gpu/GpuUtil.h"
 
 using namespace gpu;
 

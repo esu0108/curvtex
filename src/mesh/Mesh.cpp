@@ -1,5 +1,5 @@
-#include "Mesh.h"
-#include "MeshBuild.h"
+#include "mesh/Mesh.h"
+#include "mesh/MeshBuild.h"
 
 #include <rapidobj/rapidobj.hpp>
 

@@ -9,6 +9,9 @@ cbuffer CB : register(b0) {
 
 Texture2D<float4> gNormal   : register(t0);
 Texture2D<float4> gPosition : register(t1);
+Texture2D<uint2>  gSeed     : register(t2); // ジャンプフラッディングの結果(最寄りのモデルのあるテクセルの座標)
+
+static const uint kInvalidSeed = 0xFFFF;
 
 struct VSOut { float4 pos : SV_POSITION; };
 
@@ -56,47 +59,25 @@ float CurvatureValue(int2 c, float3 n, float3 p) {
                        : saturate(abs(k) * invRange);
 }
 
-// モデルの無いテクセル c から、pad テクセル以内で最も近い「モデルのあるテクセル」を探す。
-// 正方形のリングを内側から広げ、これ以上近い候補が出ない距離に達したら打ち切る。
-bool FindNearestCovered(int2 c, out int2 q) {
-    q = c;
-    float best  = 1e30;
-    bool  found = false;
-    const float maxD2 = (float)(pad * pad);
-    [loop]
-    for (int r = 1; r <= (int)pad; ++r) {
-        if (found && best <= (float)(r * r)) break; // 以降のリングはどれも best より遠い
-        [loop]
-        for (int dy = -r; dy <= r; ++dy) {
-            const int stepx = (abs(dy) == r) ? 1 : 2 * r; // 上下の辺は全て、それ以外はリングの左右端のみ
-            [loop]
-            for (int dx = -r; dx <= r; dx += stepx) {
-                const float d2 = (float)(dx * dx + dy * dy);
-                if (d2 > maxD2 || d2 >= best) continue;
-                const int2 s = c + int2(dx, dy);
-                if (s.x < 0 || s.y < 0 || s.x >= (int)texW || s.y >= (int)texH) continue;
-                if (gNormal.Load(int3(s, 0)).w < 0.5) continue;
-                best  = d2;
-                q     = s;
-                found = true;
-            }
-        }
-    }
-    return found;
-}
-
 float4 PSMain(VSOut i) : SV_Target {
     int2   c = int2(i.pos.xy);
     float4 a = gNormal.Load(int3(c, 0));
 
     if (a.w < 0.5) {
-        // モデルが無い領域: pad > 0 なら最寄りのテクセルの値で埋める(UV島の境界の滲み/継ぎ目対策)
-        int2 q;
-        if (pad > 0 && FindNearestCovered(c, q)) {
-            float3 nq = gNormal.Load(int3(q, 0)).xyz;
-            float3 pq = gPosition.Load(int3(q, 0)).xyz;
-            float  v  = CurvatureValue(q, nq, pq);
-            return float4(v, v, v, 1);
+        // モデルが無い領域: pad > 0 なら、ジャンプフラッディングで求めた最寄りのテクセルの値で埋める
+        // (UV島の境界の滲み/継ぎ目対策)。pad 以内に無ければ黒。
+        if (pad > 0) {
+            const uint2 s = gSeed.Load(int3(c, 0));
+            if (s.x != kInvalidSeed) {
+                const int2 d = int2(s) - c;
+                if (d.x * d.x + d.y * d.y <= (int)(pad * pad)) {
+                    const int2   q  = int2(s);
+                    const float3 nq = gNormal.Load(int3(q, 0)).xyz;
+                    const float3 pq = gPosition.Load(int3(q, 0)).xyz;
+                    const float  v  = CurvatureValue(q, nq, pq);
+                    return float4(v, v, v, 1);
+                }
+            }
         }
         return float4(0, 0, 0, 1);
     }

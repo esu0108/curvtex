@@ -1,4 +1,4 @@
-#include "Window.h"
+#include "platform/Window.h"
 
 #include <shellapi.h>
 
@@ -7,7 +7,7 @@
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
-#include "resource.h"
+#include "platform/resource.h"
 
 // imgui_impl_win32.h では #if 0 で隠されているので自前で宣言する
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

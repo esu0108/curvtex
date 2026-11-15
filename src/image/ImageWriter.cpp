@@ -1,4 +1,4 @@
-#include "ImageWriter.h"
+#include "image/ImageWriter.h"
 
 #include <Windows.h>
 #include <wincodec.h>
@@ -12,7 +12,7 @@
 #include <fstream>
 #include <vector>
 
-#include "Bmp.h"
+#include "image/Bmp.h"
 
 using Microsoft::WRL::ComPtr;
 

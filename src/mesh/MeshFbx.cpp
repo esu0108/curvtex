@@ -7,10 +7,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Mesh.h"
-#include "MeshBuild.h"
-#include "MeshUtil.h"
-#include "PathUtil.h"
+#include "mesh/Mesh.h"
+#include "mesh/MeshBuild.h"
+#include "mesh/MeshUtil.h"
+#include "platform/PathUtil.h"
 
 namespace {
 

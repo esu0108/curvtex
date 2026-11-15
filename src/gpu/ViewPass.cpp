@@ -1,4 +1,4 @@
-#include "ViewPass.h"
+#include "gpu/ViewPass.h"
 
 #include <algorithm>
 #include <climits>

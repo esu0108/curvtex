@@ -1,4 +1,4 @@
-#include "Dialogs.h"
+#include "platform/Dialogs.h"
 
 #include <commdlg.h>
 
@@ -6,8 +6,8 @@
 #include <cwchar>
 #include <filesystem>
 
-#include "ImageWriter.h"
-#include "PathUtil.h"
+#include "image/ImageWriter.h"
+#include "platform/PathUtil.h"
 
 namespace fs = std::filesystem;
 

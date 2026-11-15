@@ -1,4 +1,4 @@
-#include "Ui.h"
+#include "ui/Ui.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -66,7 +66,7 @@ void DrawSettingsPanel(AppState& s, const BakePass& bake, Actions& act) {
     ImGui::TextDisabled("大きいほど滑らか。小さいと三角形ごとの段差が出ます");
     ImGui::Text("パディング (テクセル)");
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##padding", &s.padding, 0, 16)) s.dirty = true;
+    if (ImGui::SliderInt("##padding", &s.padding, 0, 256, "%d", ImGuiSliderFlags_Logarithmic)) s.dirty = true;
     ImGui::TextDisabled("UV島の外側を最寄りの値で塗り広げ、継ぎ目の黒い線を防ぎます");
     ImGui::Text("最大曲率 (1/単位長)");
     ImGui::SetNextItemWidth(-FLT_MIN);
