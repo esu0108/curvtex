@@ -103,6 +103,7 @@ int App::Run(int nShow) {
     window_.Create(hInst_, L"curvtex", 1400, 850, std::move(cb));
 
     renderer_.Init(window_.Handle());
+    curvature_.Init(renderer_);
     bake_.Init(renderer_);
     view_.Init(renderer_);
 
@@ -176,7 +177,8 @@ Result BuildMeshJob(const std::string& path, Mesh base, bool smooth) {
         }
         r.mesh = r.base;
         if (smooth) RecomputeSmoothNormals(r.mesh);
-        r.ok = true;
+        r.graph = BuildCurvatureGraph(r.mesh); // 隣接グラフ(重いので読み込みと同じワーカーで作る)
+        r.ok    = true;
     } catch (const std::exception& e) {
         r.ok  = false;
         r.err = std::string("例外: ") + e.what();
@@ -217,6 +219,7 @@ bool App::PollJobs() {
         if (r.ok) {
             try {
                 gpuMesh_.Upload(renderer_, r.mesh); // D3D12 リソース作成はメインスレッドで
+                curvature_.SetGraph(r.graph);
                 baseMesh_       = std::move(r.base);
                 state_.hasMesh  = true;
                 state_.hasBaked = true;
@@ -289,10 +292,16 @@ void App::RenderFrame() {
 
     renderer_.BeginFrame();
     if (state_.hasMesh && state_.AnyDirty()) {
-        // 上流が変わったら下流も作り直す (ジオメトリ → パディング → シェーディング)
+        // 上流が変わったら下流も作り直す。
+        //   曲率の計算 → (平滑化 → ラスタライズ) → パディング → シェーディング
         if (state_.dirtyGeometry) {
-            bake_.RecordGeometry(gpuMesh_);
-            state_.dirtyPadding = true;
+            curvature_.RecordRaw();
+            state_.dirtySmoothing = state_.dirtyPadding = true;
+        }
+        if (state_.dirtySmoothing) {
+            curvature_.RecordSmoothing(static_cast<uint32_t>(state_.smoothing));
+            bake_.RecordRaster(gpuMesh_, curvature_);
+            state_.dirtyShading = true;
         }
         if (state_.dirtyPadding) {
             bake_.RecordPadding(static_cast<uint32_t>(state_.padding));
@@ -301,10 +310,9 @@ void App::RenderFrame() {
         BakePass::Params p;
         p.invRange = 1.0f / std::max(state_.maxCurv, 1e-6f);
         p.mode     = static_cast<uint32_t>(state_.mode);
-        p.radius   = static_cast<uint32_t>(state_.sampleRadius);
         p.padding  = static_cast<uint32_t>(state_.padding);
         bake_.RecordShading(p);
-        state_.dirtyGeometry = state_.dirtyPadding = state_.dirtyShading = false;
+        state_.dirtyGeometry = state_.dirtySmoothing = state_.dirtyPadding = state_.dirtyShading = false;
     }
     if (drawView) {
         float mvp[16], view[16];

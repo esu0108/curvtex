@@ -23,6 +23,9 @@ ComPtr<ID3D12RootSignature> MakeRootSignature(ID3D12Device* dev, const D3D12_ROO
 // UPLOAD ヒープのバッファを作って data をコピーする
 ComPtr<ID3D12Resource> CreateUploadBuffer(ID3D12Device* dev, const void* data, UINT64 size);
 
+// DEFAULT ヒープのバッファ。UAV で書く場合は flags に D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS を指定する。
+ComPtr<ID3D12Resource> CreateDefaultBuffer(ID3D12Device* dev, UINT64 size, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initial, const char* what);
+
 // レンダーターゲットとして使い、シェーダーから読めるテクスチャ(初期状態は PIXEL_SHADER_RESOURCE)。
 // clear は最適化クリア値で、実際のクリアにも同じ値を使うと警告が出ない。
 ComPtr<ID3D12Resource> CreateRenderTargetTexture(ID3D12Device* dev, UINT w, UINT h, DXGI_FORMAT fmt, const float clear[4], const char* what);

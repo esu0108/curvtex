@@ -1,5 +1,6 @@
 #include "mesh/Mesh.h"
 #include "mesh/MeshBuild.h"
+#include "mesh/Weld.h"
 
 #include <rapidobj/rapidobj.hpp>
 
@@ -219,36 +220,12 @@ bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error) 
     }
 }
 
-namespace {
-struct PosKey {
-    int64_t x, y, z;
-    bool operator==(const PosKey&) const = default;
-};
-struct PosKeyHash {
-    size_t operator()(const PosKey& k) const noexcept {
-        size_t h = static_cast<size_t>(k.x) * 73856093u;
-        h ^= static_cast<size_t>(k.y) * 19349663u;
-        h ^= static_cast<size_t>(k.z) * 83492791u;
-        return h;
-    }
-};
-} // namespace
-
 void RecomputeSmoothNormals(Mesh& m) {
     if (m.vertices.empty() || m.indices.size() < 3) return;
 
     // 位置が(ほぼ)同じ頂点を同一視する
-    const double q = std::max(static_cast<double>(m.radius) * 1e-5, 1e-12);
-    std::unordered_map<PosKey, uint32_t, PosKeyHash> weld;
-    std::vector<uint32_t>                            wid(m.vertices.size());
-    uint32_t                                         wcount = 0;
-    for (size_t i = 0; i < m.vertices.size(); ++i) {
-        const auto& v = m.vertices[i];
-        PosKey      k{std::llround(v.px / q), std::llround(v.py / q), std::llround(v.pz / q)};
-        auto        it = weld.find(k);
-        if (it == weld.end()) it = weld.emplace(k, wcount++).first;
-        wid[i] = it->second;
-    }
+    std::vector<uint32_t> wid;
+    const uint32_t        wcount = WeldVertexIds(m, wid);
 
     std::vector<std::array<double, 3>> acc(wcount, std::array<double, 3>{0.0, 0.0, 0.0});
     auto sub3  = [](const Vertex& a, const Vertex& b) { return std::array<double, 3>{double(a.px) - b.px, double(a.py) - b.py, double(a.pz) - b.pz}; };

@@ -75,6 +75,16 @@ ComPtr<ID3D12Resource> CreateUploadBuffer(ID3D12Device* dev, const void* data, U
     return res;
 }
 
+ComPtr<ID3D12Resource> CreateDefaultBuffer(ID3D12Device* dev, UINT64 size, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initial, const char* what) {
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd = BufferDesc(size);
+    rd.Flags               = flags;
+    ComPtr<ID3D12Resource> res;
+    Check(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, initial, nullptr, IID_PPV_ARGS(&res)), what);
+    return res;
+}
+
 ComPtr<ID3D12Resource> CreateRenderTargetTexture(ID3D12Device* dev, UINT w, UINT h, DXGI_FORMAT fmt, const float clear[4], const char* what) {
     D3D12_HEAP_PROPERTIES hp{};
     hp.Type = D3D12_HEAP_TYPE_DEFAULT;

@@ -111,10 +111,12 @@ function(add_shader name hlsl entry profile varname)
   set(SHADER_HEADERS ${SHADER_HEADERS} ${out} PARENT_SCOPE)
 endfunction()
 
-add_shader(pass1_vs pass1.hlsl VSMain vs_5_0 g_Pass1VS)
-add_shader(pass1_ps pass1.hlsl PSMain ps_5_0 g_Pass1PS)
-add_shader(pass2_vs pass2.hlsl VSMain vs_5_0 g_Pass2VS)
-add_shader(pass2_ps pass2.hlsl PSMain ps_5_0 g_Pass2PS)
+add_shader(raster_vs   raster.hlsl    VSMain       vs_5_0 g_RasterVS)
+add_shader(raster_ps   raster.hlsl    PSMain       ps_5_0 g_RasterPS)
+add_shader(curvature_cs curvature.hlsl CSCurvature  cs_5_0 g_CurvatureCS)
+add_shader(smooth_cs   curvature.hlsl CSSmooth     cs_5_0 g_SmoothCS)
+add_shader(shade_vs    shade.hlsl     VSMain       vs_5_0 g_ShadeVS)
+add_shader(shade_ps    shade.hlsl     PSMain       ps_5_0 g_ShadePS)
 add_shader(jfa_vs      jfa.hlsl  VSMain  vs_5_0 g_JfaVS)
 add_shader(jfa_init_ps jfa.hlsl  PSInit  ps_5_0 g_JfaInitPS)
 add_shader(jfa_step_ps jfa.hlsl  PSStep  ps_5_0 g_JfaStepPS)
@@ -150,6 +152,8 @@ add_executable(curvtex WIN32
   src/gpu/Renderer.h
   src/gpu/GpuUtil.cpp
   src/gpu/GpuUtil.h
+  src/gpu/CurvatureCompute.cpp
+  src/gpu/CurvatureCompute.h
   src/gpu/GpuMesh.cpp
   src/gpu/GpuMesh.h
   src/gpu/BakePass.cpp
@@ -159,6 +163,10 @@ add_executable(curvtex WIN32
   # モデル読み込み
   src/mesh/Mesh.cpp
   src/mesh/Mesh.h
+  src/mesh/Weld.cpp
+  src/mesh/Weld.h
+  src/mesh/CurvatureGraph.cpp
+  src/mesh/CurvatureGraph.h
   src/mesh/MeshBuild.cpp
   src/mesh/MeshBuild.h
   src/mesh/MeshUtil.h
@@ -170,15 +178,16 @@ add_executable(curvtex WIN32
   src/image/Bmp.cpp
   src/image/Bmp.h
   # シェーダ
-  shaders/pass1.hlsl
-  shaders/pass2.hlsl
+  shaders/curvature.hlsl
+  shaders/raster.hlsl
+  shaders/shade.hlsl
   shaders/jfa.hlsl
   shaders/view.hlsl
   ${SHADER_HEADERS}
 )
 
 # .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
-set_source_files_properties(shaders/pass1.hlsl shaders/pass2.hlsl shaders/jfa.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
+set_source_files_properties(shaders/curvature.hlsl shaders/raster.hlsl shaders/shade.hlsl shaders/jfa.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include

@@ -14,7 +14,7 @@ struct AppState {
     // ---- ベイク設定 ----
     int   texW = 1024, texH = 1024;
     int   mode          = 0;     // 0: 符号付き, 1: 絶対値
-    int   sampleRadius  = 3;     // 曲率差分のサンプル幅(テクセル)
+    int   smoothing     = 2;     // 頂点ごとの曲率を隣接頂点と平均化する回数
     int   padding       = 4;     // UV島の境界を塗り広げる幅(テクセル)。0 で無効
     bool  smoothNormals = true;  // スムース法線を再計算するか
     float maxCurv        = 4.0f; // この曲率(1/単位長)で出力が飽和する
@@ -23,11 +23,12 @@ struct AppState {
     // ---- 進行状況 (App が更新する) ----
     bool hasMesh  = false;
     bool hasBaked = false;
-    // 再ベイクが必要な段階 (上流が立てば下流も実行される。BakePass の説明を参照)
-    bool dirtyGeometry = false; // モデル / テクスチャサイズ
-    bool dirtyPadding  = false; // パディング幅
-    bool dirtyShading  = false; // モード / サンプル幅 / 最大曲率
-    bool AnyDirty() const { return dirtyGeometry || dirtyPadding || dirtyShading; }
+    // 再ベイクが必要な段階 (上流が立てば下流も実行される)
+    bool dirtyGeometry  = false; // モデル / テクスチャサイズ        → 曲率の計算から全て
+    bool dirtySmoothing = false; // スムージング回数                 → 平滑化 + ラスタライズ + シェーディング
+    bool dirtyPadding   = false; // パディング幅                     → パディング + シェーディング
+    bool dirtyShading   = false; // モード / 最大曲率                → シェーディングのみ
+    bool AnyDirty() const { return dirtyGeometry || dirtySmoothing || dirtyPadding || dirtyShading; }
     bool loading  = false; // モデル読み込み/メッシュ更新ジョブが実行中
     bool saving   = false; // 画像保存ジョブが実行中
 

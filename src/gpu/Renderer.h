@@ -12,22 +12,28 @@ using Microsoft::WRL::ComPtr;
 // ディスクリプタヒープ内のスロット割り当て。ベイク/3Dビューの各パスとアプリ(ImGui)で共有する。
 namespace Slot {
 // RTV ヒープ (kRtvCount 個): 0,1 はバックバッファ
-constexpr UINT kRtvNormal   = 2;
-constexpr UINT kRtvPosition = 3;
-constexpr UINT kRtvResult   = 4;
-constexpr UINT kRtvView     = 5;
-constexpr UINT kRtvSeedA    = 6; // ジャンプフラッディングのピンポン用
-constexpr UINT kRtvSeedB    = 7;
-constexpr UINT kRtvCount    = 8;
-// SRV ヒープ: kSrvNormal と kSrvPosition は連続している必要がある(パス2が1つのテーブルで読む)。
-// kSrvReserved 以降は ImGui が使う。
-constexpr UINT kSrvNormal   = 0;
-constexpr UINT kSrvPosition = 1;
-constexpr UINT kSrvResult   = 2;
-constexpr UINT kSrvView     = 3;
-constexpr UINT kSrvSeedA    = 4;
-constexpr UINT kSrvSeedB    = 5;
-constexpr UINT kSrvReserved = 6;
+constexpr UINT kRtvCurv   = 2; // 曲率(UV空間)
+constexpr UINT kRtvResult = 3; // 表示用の結果
+constexpr UINT kRtvView   = 4; // 3Dビュー
+constexpr UINT kRtvSeedA  = 5; // ジャンプフラッディングのピンポン用
+constexpr UINT kRtvSeedB  = 6;
+constexpr UINT kRtvCount  = 8;
+// SRV/UAV ヒープ。kSrvReserved 以降は ImGui が使う。
+constexpr UINT kSrvCurvTex = 0; // 曲率(UV空間)
+constexpr UINT kSrvResult  = 1;
+constexpr UINT kSrvView    = 2;
+constexpr UINT kSrvSeedA   = 3;
+constexpr UINT kSrvSeedB   = 4;
+// 曲率の計算 (CurvatureCompute)。kSrvGraph からの 4 つは連続している必要がある(1つのテーブルで読む)。
+constexpr UINT kSrvGraph    = 5; // 5..8 = 位置, 法線, offsets, neighbors
+constexpr UINT kSrvNodeMap  = 9; // 頂点 → ノード
+constexpr UINT kSrvCurvRaw  = 10; // 頂点ごとの曲率: 生 / スムージングのピンポン A, B
+constexpr UINT kSrvCurvA    = 11;
+constexpr UINT kSrvCurvB    = 12;
+constexpr UINT kUavCurvRaw  = 13;
+constexpr UINT kUavCurvA    = 14;
+constexpr UINT kUavCurvB    = 15;
+constexpr UINT kSrvReserved = 16;
 } // namespace Slot
 
 // DirectX12 の土台: デバイス / キュー / スワップチェーン / ディスクリプタヒープ / フェンス / コマンドリスト。

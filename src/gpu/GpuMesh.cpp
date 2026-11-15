@@ -22,8 +22,6 @@ void GpuMesh::Upload(Renderer& renderer, const Mesh& mesh) {
     ibv_.SizeInBytes    = static_cast<UINT>(ibSize);
     ibv_.Format         = DXGI_FORMAT_R32_UINT;
     indexCount_         = static_cast<UINT>(mesh.indices.size());
-    for (int i = 0; i < 3; ++i) center_[i] = mesh.center[i];
-    radius_ = mesh.radius;
 }
 
 void GpuMesh::Draw(ID3D12GraphicsCommandList* cl) const {

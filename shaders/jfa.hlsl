@@ -9,7 +9,7 @@ cbuffer CB : register(b0) {
     uint pad;
 };
 
-Texture2D<float4> gNormal : register(t0); // PSInit: カバレッジ(.w)の読み出し用
+Texture2D<float2> gCurv   : register(t0); // PSInit: カバレッジ(.y)の読み出し用
 Texture2D<uint2>  gSeed   : register(t1); // PSStep: 前のパスの結果
 
 static const uint kInvalid = 0xFFFF;
@@ -26,7 +26,7 @@ VSOut VSMain(uint id : SV_VertexID) {
 // モデルのあるテクセルは自分自身がシード
 uint2 PSInit(VSOut i) : SV_Target {
     const int2 c = int2(i.pos.xy);
-    return (gNormal.Load(int3(c, 0)).w >= 0.5) ? uint2(c) : uint2(kInvalid, kInvalid);
+    return (gCurv.Load(int3(c, 0)).y >= 0.5) ? uint2(c) : uint2(kInvalid, kInvalid);
 }
 
 // 周囲 8 方向 + 自分(stepSize 離れた位置)のシードのうち、最も近いものを採用する

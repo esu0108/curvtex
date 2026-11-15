@@ -6,45 +6,31 @@
 #include <vector>
 
 // ビルド時に fxc でコンパイルされたシェーダ (shaders/*.hlsl → CMake が生成するヘッダ)
-#include "jfa_vs.h"
 #include "jfa_init_ps.h"
 #include "jfa_step_ps.h"
-#include "pass1_ps.h"
-#include "pass1_vs.h"
-#include "pass2_ps.h"
-#include "pass2_vs.h"
+#include "jfa_vs.h"
+#include "raster_ps.h"
+#include "raster_vs.h"
+#include "shade_ps.h"
+#include "shade_vs.h"
 
 using namespace gpu;
 
 namespace {
 
-// 法線バッファの形式。単位法線は [-1,1] に収まるので 16bit SNORM で足りる(精度は一様に約3e-5)。
-// 16bit FLOAT は 1 付近で精度が粗く(約5e-4)、曲率の差分計算にノイズが乗るので使わない。
-constexpr DXGI_FORMAT kNormalFormat   = DXGI_FORMAT_R16G16B16A16_SNORM;
-// 位置はメッシュの境界球で正規化して [-1,1] に収め、法線と同じ 16bit SNORM で持つ(精度は半径の約3e-5で一様)。
-// 曲率は (法線の差)/(位置の差) の比なので、位置の量子化誤差は曲率に数%以下の相対誤差として現れるだけで、
-// 平坦な面にノイズを足すことはない。気になる場合は DXGI_FORMAT_R32G32B32A32_FLOAT に戻せばよい。
-constexpr DXGI_FORMAT kPositionFormat = DXGI_FORMAT_R16G16B16A16_SNORM;
-constexpr DXGI_FORMAT kResultFormat   = DXGI_FORMAT_R8G8B8A8_UNORM;
-constexpr DXGI_FORMAT kSeedFormat     = DXGI_FORMAT_R16G16_UINT; // 最寄りのテクセル座標 (最大 4096 なので 16bit で足りる)
+// 曲率テクスチャ: x = 曲率(1/単位長, 32bit float), y = カバレッジ。
+constexpr DXGI_FORMAT kCurvFormat   = DXGI_FORMAT_R32G32_FLOAT;
+constexpr DXGI_FORMAT kResultFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+constexpr DXGI_FORMAT kSeedFormat   = DXGI_FORMAT_R16G16_UINT; // 最寄りのテクセル座標 (最大 4096 なので 16bit で足りる)
 
-// パス2のルート定数 (shaders/pass2.hlsl の cbuffer と同じ並び)
-struct Pass2Constants {
+// シェーディングのルート定数 (shaders/shade.hlsl の cbuffer と同じ並び)
+struct ShadeConstants {
     uint32_t w, h;
     float    invRange;
     uint32_t mode;
-    uint32_t radius;
     uint32_t pad;
-    float    invMeshRadius;
 };
-constexpr UINT kPass2ConstantCount = sizeof(Pass2Constants) / sizeof(uint32_t);
-
-// パス1のルート定数 (shaders/pass1.hlsl の cbuffer と同じ並び)
-struct Pass1Constants {
-    float center[3];
-    float invRadius;
-};
-constexpr UINT kPass1ConstantCount = sizeof(Pass1Constants) / sizeof(uint32_t);
+constexpr UINT kShadeConstantCount = sizeof(ShadeConstants) / sizeof(uint32_t);
 
 // ジャンプフラッディングのルート定数 (shaders/jfa.hlsl の cbuffer と同じ並び)
 struct JfaConstants {
@@ -62,6 +48,33 @@ int InitialJumpStep(uint32_t padding) {
     return s0;
 }
 
+D3D12_DESCRIPTOR_RANGE SrvRange(UINT baseRegister) {
+    D3D12_DESCRIPTOR_RANGE range{};
+    range.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    range.NumDescriptors                    = 1;
+    range.BaseShaderRegister                = baseRegister;
+    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    return range;
+}
+
+D3D12_ROOT_PARAMETER SrvTable(const D3D12_DESCRIPTOR_RANGE* range, D3D12_SHADER_VISIBILITY vis) {
+    D3D12_ROOT_PARAMETER p{};
+    p.ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    p.DescriptorTable.NumDescriptorRanges = 1;
+    p.DescriptorTable.pDescriptorRanges   = range;
+    p.ShaderVisibility                    = vis;
+    return p;
+}
+
+D3D12_ROOT_PARAMETER PixelConstants(UINT count) {
+    D3D12_ROOT_PARAMETER p{};
+    p.ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    p.Constants.ShaderRegister = 0;
+    p.Constants.Num32BitValues = count;
+    p.ShaderVisibility         = D3D12_SHADER_VISIBILITY_PIXEL;
+    return p;
+}
+
 } // namespace
 
 void BakePass::Init(Renderer& renderer) {
@@ -77,24 +90,22 @@ void BakePass::Resize(UINT width, UINT height) {
 
 void BakePass::CreateTargets(UINT w, UINT h) {
     r_->WaitIdle();
-    normal_.Reset();
-    position_.Reset();
+    curvTex_.Reset();
     result_.Reset();
     seed_[0].Reset();
     seed_[1].Reset();
-    geometryReady_ = false;
-    w_ = w;
-    h_ = h;
+    rasterReady_ = false;
+    w_           = w;
+    h_           = h;
 
     auto* dev            = r_->Device();
-    const float clear[4] = {0.f, 0.f, 0.f, 0.f}; // RecordBake の実際のクリア値と同じにしておく
+    const float clear[4] = {0.f, 0.f, 0.f, 0.f}; // 実際のクリア値と同じにしておく
     auto        make     = [&](DXGI_FORMAT fmt, ComPtr<ID3D12Resource>& res, UINT rtvSlot, UINT srvSlot) {
         res = CreateRenderTargetTexture(dev, w, h, fmt, clear, "CreateCommittedResource(bake target)");
         dev->CreateRenderTargetView(res.Get(), nullptr, r_->RtvCpu(rtvSlot));
         dev->CreateShaderResourceView(res.Get(), nullptr, r_->SrvCpu(srvSlot));
     };
-    make(kNormalFormat, normal_, Slot::kRtvNormal, Slot::kSrvNormal);
-    make(kPositionFormat, position_, Slot::kRtvPosition, Slot::kSrvPosition);
+    make(kCurvFormat, curvTex_, Slot::kRtvCurv, Slot::kSrvCurvTex);
     make(kResultFormat, result_, Slot::kRtvResult, Slot::kSrvResult);
     make(kSeedFormat, seed_[0], Slot::kRtvSeedA, Slot::kSrvSeedA);
     make(kSeedFormat, seed_[1], Slot::kRtvSeedB, Slot::kSrvSeedB);
@@ -103,76 +114,51 @@ void BakePass::CreateTargets(UINT w, UINT h) {
 void BakePass::CreatePipelines() {
     auto* dev = r_->Device();
 
-    // ---- パス1 ---------------------------------------------------------
+    // ---- ラスタライズ: 頂点シェーダーが StructuredBuffer を2つ読む ---------
     {
-        D3D12_ROOT_PARAMETER param{};
-        param.ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        param.Constants.ShaderRegister = 0;
-        param.Constants.Num32BitValues = kPass1ConstantCount;
-        param.ShaderVisibility         = D3D12_SHADER_VISIBILITY_VERTEX;
+        const D3D12_DESCRIPTOR_RANGE nodeMap = SrvRange(0); // t0 = 頂点 → ノード
+        const D3D12_DESCRIPTOR_RANGE curv    = SrvRange(1); // t1 = ノードごとの曲率 (スムージング結果。A/B で入れ替わるので別テーブル)
+        D3D12_ROOT_PARAMETER         params[2] = {SrvTable(&nodeMap, D3D12_SHADER_VISIBILITY_VERTEX), SrvTable(&curv, D3D12_SHADER_VISIBILITY_VERTEX)};
 
         D3D12_ROOT_SIGNATURE_DESC rsd{};
-        rsd.NumParameters = 1;
-        rsd.pParameters   = &param;
+        rsd.NumParameters = 2;
+        rsd.pParameters   = params;
         rsd.Flags         = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-        rs1_              = MakeRootSignature(dev, rsd);
+        rsRaster_         = MakeRootSignature(dev, rsd);
 
         const auto layout = GpuMesh::InputLayout();
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
-        pd.pRootSignature = rs1_.Get();
-        pd.VS             = {g_Pass1VS, sizeof(g_Pass1VS)};
-        pd.PS             = {g_Pass1PS, sizeof(g_Pass1PS)};
-        for (int i = 0; i < 2; ++i) pd.BlendState.RenderTarget[i].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        pd.pRootSignature = rsRaster_.Get();
+        pd.VS             = {g_RasterVS, sizeof(g_RasterVS)};
+        pd.PS             = {g_RasterPS, sizeof(g_RasterPS)};
+        pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
         pd.InputLayout           = {layout.data(), static_cast<UINT>(layout.size())};
         pd.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        pd.NumRenderTargets      = 2;
-        pd.RTVFormats[0]         = kNormalFormat;
-        pd.RTVFormats[1]         = kPositionFormat;
+        pd.NumRenderTargets      = 1;
+        pd.RTVFormats[0]         = kCurvFormat;
         pd.SampleDesc.Count      = 1;
-        Check(dev->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso1_)), "CreateGraphicsPipelineState(pass1)");
+        Check(dev->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&psoRaster_)), "CreateGraphicsPipelineState(raster)");
     }
 
-    // ---- パス2 ---------------------------------------------------------
+    // ---- シェーディング ---------------------------------------------------
     {
-        D3D12_DESCRIPTOR_RANGE range{};
-        range.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        range.NumDescriptors                    = 2; // t0 = normal, t1 = position
-        range.BaseShaderRegister                = 0;
-        range.RegisterSpace                     = 0;
-        range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-        // t2 = ジャンプフラッディングの結果。ピンポンで A/B のどちらにもなるので、別のテーブルにする
-        D3D12_DESCRIPTOR_RANGE seedRange = range;
-        seedRange.NumDescriptors         = 1;
-        seedRange.BaseShaderRegister     = 2;
-
-        D3D12_ROOT_PARAMETER params[3]{};
-        params[0].ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-        params[0].Constants.ShaderRegister = 0;
-        params[0].Constants.RegisterSpace  = 0;
-        params[0].Constants.Num32BitValues = kPass2ConstantCount;
-        params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_PIXEL;
-        params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        params[1].DescriptorTable.NumDescriptorRanges = 1;
-        params[1].DescriptorTable.pDescriptorRanges   = &range;
-        params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
-        params[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-        params[2].DescriptorTable.NumDescriptorRanges = 1;
-        params[2].DescriptorTable.pDescriptorRanges   = &seedRange;
-        params[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
+        const D3D12_DESCRIPTOR_RANGE curvTex = SrvRange(0); // t0 = 曲率テクスチャ
+        const D3D12_DESCRIPTOR_RANGE seed    = SrvRange(1); // t1 = 最寄りのテクセル座標 (ピンポンで A/B のどちらにもなるので別テーブル)
+        D3D12_ROOT_PARAMETER         params[3] = {PixelConstants(kShadeConstantCount), SrvTable(&curvTex, D3D12_SHADER_VISIBILITY_PIXEL),
+                                                  SrvTable(&seed, D3D12_SHADER_VISIBILITY_PIXEL)};
 
         D3D12_ROOT_SIGNATURE_DESC rsd{};
         rsd.NumParameters = 3;
         rsd.pParameters   = params;
-        rs2_              = MakeRootSignature(dev, rsd);
+        rsShade_          = MakeRootSignature(dev, rsd);
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
-        pd.pRootSignature = rs2_.Get();
-        pd.VS             = {g_Pass2VS, sizeof(g_Pass2VS)};
-        pd.PS             = {g_Pass2PS, sizeof(g_Pass2PS)};
+        pd.pRootSignature = rsShade_.Get();
+        pd.VS             = {g_ShadeVS, sizeof(g_ShadeVS)};
+        pd.PS             = {g_ShadePS, sizeof(g_ShadePS)};
         pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
@@ -180,35 +166,21 @@ void BakePass::CreatePipelines() {
         pd.NumRenderTargets      = 1;
         pd.RTVFormats[0]         = kResultFormat;
         pd.SampleDesc.Count      = 1;
-        Check(dev->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso2_)), "CreateGraphicsPipelineState(pass2)");
+        Check(dev->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&psoShade_)), "CreateGraphicsPipelineState(shade)");
     }
 
     // ---- ジャンプフラッディング (初期化 / ステップ) -----------------------
     {
         // 1つの SRV(単独のテーブル)を、指定のレジスタ(t0 or t1)で読むルートシグネチャを作る
         auto makeRoot = [&](UINT baseRegister) {
-            D3D12_DESCRIPTOR_RANGE range{};
-            range.RangeType                         = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-            range.NumDescriptors                    = 1;
-            range.BaseShaderRegister                = baseRegister;
-            range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-            D3D12_ROOT_PARAMETER params[2]{};
-            params[0].ParameterType            = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-            params[0].Constants.ShaderRegister = 0;
-            params[0].Constants.Num32BitValues = kJfaConstantCount;
-            params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_PIXEL;
-            params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-            params[1].DescriptorTable.NumDescriptorRanges = 1;
-            params[1].DescriptorTable.pDescriptorRanges   = &range;
-            params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_PIXEL;
-
-            D3D12_ROOT_SIGNATURE_DESC rsd{};
+            const D3D12_DESCRIPTOR_RANGE range = SrvRange(baseRegister);
+            D3D12_ROOT_PARAMETER         params[2] = {PixelConstants(kJfaConstantCount), SrvTable(&range, D3D12_SHADER_VISIBILITY_PIXEL)};
+            D3D12_ROOT_SIGNATURE_DESC    rsd{};
             rsd.NumParameters = 2;
             rsd.pParameters   = params;
             return MakeRootSignature(dev, rsd);
         };
-        rsJfaInit_ = makeRoot(0); // PSInit: t0 = normal
+        rsJfaInit_ = makeRoot(0); // PSInit: t0 = 曲率テクスチャ(カバレッジ)
         rsJfaStep_ = makeRoot(1); // PSStep: t1 = 前のパスのシード
 
         auto makePso = [&](ID3D12RootSignature* rs, const void* ps, size_t psSize, const char* what) {
@@ -232,6 +204,43 @@ void BakePass::CreatePipelines() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ラスタライズ
+// ---------------------------------------------------------------------------
+void BakePass::RecordRaster(const GpuMesh& mesh, const CurvatureCompute& curvature) {
+    if (!mesh.Valid() || !curvature.Ready()) return;
+    auto* cl = r_->CommandList();
+
+    const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(w_), static_cast<float>(h_), 0.f, 1.f};
+    const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
+    const float          clear[4] = {0.f, 0.f, 0.f, 0.f};
+
+    D3D12_RESOURCE_BARRIER toRt = Transition(curvTex_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cl->ResourceBarrier(1, &toRt);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = r_->RtvCpu(Slot::kRtvCurv);
+    cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    cl->ClearRenderTargetView(rtv, clear, 0, nullptr);
+    cl->RSSetViewports(1, &vp);
+    cl->RSSetScissorRects(1, &sc);
+
+    ID3D12DescriptorHeap* heaps[] = {r_->SrvHeap()};
+    cl->SetDescriptorHeaps(1, heaps);
+    cl->SetGraphicsRootSignature(rsRaster_.Get());
+    cl->SetPipelineState(psoRaster_.Get());
+    cl->SetGraphicsRootDescriptorTable(0, curvature.NodeMapSrv()); // t0
+    cl->SetGraphicsRootDescriptorTable(1, curvature.FinalSrv());   // t1
+    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    mesh.Draw(cl);
+
+    D3D12_RESOURCE_BARRIER toSrv = Transition(curvTex_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cl->ResourceBarrier(1, &toSrv);
+    rasterReady_ = true;
+}
+
+// ---------------------------------------------------------------------------
+// パディング (ジャンプフラッディング)
+// ---------------------------------------------------------------------------
 UINT BakePass::RecordJumpFlood(uint32_t padding) {
     auto* cl = r_->CommandList();
 
@@ -247,7 +256,7 @@ UINT BakePass::RecordJumpFlood(uint32_t padding) {
     cl->RSSetScissorRects(1, &sc);
     cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // seed_[i] へフルスクリーン三角形を1回描く (描画前後で RT <-> SRV を切り替える)
+    // seed_[dst] へフルスクリーン三角形を1回描く (描画前後で RT <-> SRV を切り替える)
     auto draw = [&](int dst, ID3D12RootSignature* rs, ID3D12PipelineState* pso, int32_t step, UINT readSlot) {
         D3D12_RESOURCE_BARRIER toRt = Transition(seed_[dst].Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cl->ResourceBarrier(1, &toRt);
@@ -267,7 +276,7 @@ UINT BakePass::RecordJumpFlood(uint32_t padding) {
 
     // 初期化: モデルのあるテクセルは自分自身がシード
     int cur = 0;
-    draw(cur, rsJfaInit_.Get(), psoJfaInit_.Get(), 0, Slot::kSrvNormal);
+    draw(cur, rsJfaInit_.Get(), psoJfaInit_.Get(), 0, Slot::kSrvCurvTex);
 
     // ステップ幅 s0, s0/2, ..., 1 を順に適用し、最後にもう一度 1 を適用する(JFA+1: 取りこぼしを減らす)
     std::vector<int32_t> steps;
@@ -281,60 +290,23 @@ UINT BakePass::RecordJumpFlood(uint32_t padding) {
     return srv[cur];
 }
 
-void BakePass::RecordGeometry(const GpuMesh& mesh) {
-    if (!mesh.Valid()) return;
-    auto* cl = r_->CommandList();
-
-    const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(w_), static_cast<float>(h_), 0.f, 1.f};
-    const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
-    const float          clear[4] = {0.f, 0.f, 0.f, 0.f};
-
-    // ---- パス1: 法線 + 位置(中心・半径で正規化) を UV空間へ ----
-    invMeshRadius_ = 1.0f / mesh.Radius();
-    const Pass1Constants cb{{mesh.Center()[0], mesh.Center()[1], mesh.Center()[2]}, invMeshRadius_};
-
-    D3D12_RESOURCE_BARRIER b[2] = {
-        Transition(normal_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-        Transition(position_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET),
-    };
-    cl->ResourceBarrier(2, b);
-
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvs[2] = {r_->RtvCpu(Slot::kRtvNormal), r_->RtvCpu(Slot::kRtvPosition)};
-    cl->OMSetRenderTargets(2, rtvs, FALSE, nullptr);
-    cl->ClearRenderTargetView(rtvs[0], clear, 0, nullptr);
-    cl->ClearRenderTargetView(rtvs[1], clear, 0, nullptr);
-    cl->RSSetViewports(1, &vp);
-    cl->RSSetScissorRects(1, &sc);
-    cl->SetGraphicsRootSignature(rs1_.Get());
-    cl->SetPipelineState(pso1_.Get());
-    cl->SetGraphicsRoot32BitConstants(0, kPass1ConstantCount, &cb, 0);
-    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    mesh.Draw(cl);
-
-    D3D12_RESOURCE_BARRIER back[2] = {
-        Transition(normal_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-        Transition(position_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-    };
-    cl->ResourceBarrier(2, back);
-    geometryReady_ = true;
-}
-
 void BakePass::RecordPadding(uint32_t padding) {
-    if (!geometryReady_) return;
+    if (!rasterReady_) return;
     // パディング無効なら seed は読まれないので、どちらのテクスチャを指していてもよい。
     seedSlot_ = (padding > 0) ? RecordJumpFlood(padding) : Slot::kSrvSeedA;
 }
 
+// ---------------------------------------------------------------------------
+// シェーディング
+// ---------------------------------------------------------------------------
 void BakePass::RecordShading(const Params& params) {
-    if (!geometryReady_) return;
+    if (!rasterReady_) return;
     auto* cl = r_->CommandList();
 
     const D3D12_VIEWPORT vp{0.f, 0.f, static_cast<float>(w_), static_cast<float>(h_), 0.f, 1.f};
     const D3D12_RECT     sc{0, 0, static_cast<LONG>(w_), static_cast<LONG>(h_)};
     const float          clear[4] = {0.f, 0.f, 0.f, 0.f};
-
-    // ---- パス2: 法線から曲率 (+ パディング) ----
-    const Pass2Constants cb{w_, h_, params.invRange, params.mode, params.radius, params.padding, invMeshRadius_};
+    const ShadeConstants cb{w_, h_, params.invRange, params.mode, params.padding};
 
     D3D12_RESOURCE_BARRIER toRt = Transition(result_.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
     cl->ResourceBarrier(1, &toRt);
@@ -347,18 +319,21 @@ void BakePass::RecordShading(const Params& params) {
 
     ID3D12DescriptorHeap* heaps[] = {r_->SrvHeap()};
     cl->SetDescriptorHeaps(1, heaps);
-    cl->SetGraphicsRootSignature(rs2_.Get());
-    cl->SetPipelineState(pso2_.Get());
-    cl->SetGraphicsRoot32BitConstants(0, kPass2ConstantCount, &cb, 0);
-    cl->SetGraphicsRootDescriptorTable(1, r_->SrvGpu(Slot::kSrvNormal)); // t0=normal, t1=position
-    cl->SetGraphicsRootDescriptorTable(2, r_->SrvGpu(seedSlot_));        // t2=最寄りのテクセル座標
+    cl->SetGraphicsRootSignature(rsShade_.Get());
+    cl->SetPipelineState(psoShade_.Get());
+    cl->SetGraphicsRoot32BitConstants(0, kShadeConstantCount, &cb, 0);
+    cl->SetGraphicsRootDescriptorTable(1, r_->SrvGpu(Slot::kSrvCurvTex)); // t0 = 曲率テクスチャ
+    cl->SetGraphicsRootDescriptorTable(2, r_->SrvGpu(seedSlot_));         // t1 = 最寄りのテクセル座標
     cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cl->DrawInstanced(3, 1, 0, 0);
 
-    D3D12_RESOURCE_BARRIER b = Transition(result_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    cl->ResourceBarrier(1, &b);
+    D3D12_RESOURCE_BARRIER toSrv = Transition(result_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cl->ResourceBarrier(1, &toSrv);
 }
 
+// ---------------------------------------------------------------------------
+// 読み戻し
+// ---------------------------------------------------------------------------
 bool BakePass::Readback(std::vector<uint8_t>& rgba) {
     if (!result_) return false;
     auto* dev = r_->Device();

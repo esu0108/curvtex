@@ -8,7 +8,9 @@
 
 #include "app/AppState.h"
 #include "gpu/BakePass.h"
+#include "gpu/CurvatureCompute.h"
 #include "gpu/GpuMesh.h"
+#include "mesh/CurvatureGraph.h"
 #include "mesh/Mesh.h"
 #include "gpu/Renderer.h"
 #include "gpu/ViewPass.h"
@@ -31,6 +33,7 @@ private:
         std::string err;
         Mesh        base; // ファイルから読み込んだまま
         Mesh        mesh; // スムース法線適用後(GPUへ送る)
+        CurvatureGraph graph; // mesh から作った曲率計算用の隣接グラフ
     };
     // 画像保存(エンコード + ファイル書き込み)の結果
     struct SaveResult {
@@ -55,6 +58,7 @@ private:
     Window    window_;
     Renderer  renderer_;
     GpuMesh   gpuMesh_;
+    CurvatureCompute curvature_; // 頂点ごとの曲率 (GPU コンピュート)
     BakePass  bake_;
     ViewPass  view_;
 

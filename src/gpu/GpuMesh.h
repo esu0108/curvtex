@@ -13,10 +13,6 @@ public:
 
     bool Valid() const { return indexCount_ != 0; }
 
-    // 境界球 (ベイクで位置を正規化するのに使う)
-    const float* Center() const { return center_; }
-    float        Radius() const { return radius_; }
-
     // 頂点/インデックスバッファをバインドして描画する(プリミティブトポロジは呼び出し側が設定済みであること)
     void Draw(ID3D12GraphicsCommandList* cl) const;
 
@@ -28,6 +24,4 @@ private:
     D3D12_VERTEX_BUFFER_VIEW    vbv_{};
     D3D12_INDEX_BUFFER_VIEW     ibv_{};
     UINT                        indexCount_ = 0;
-    float                       center_[3]  = {0, 0, 0};
-    float                       radius_     = 1.0f;
 };

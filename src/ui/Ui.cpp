@@ -60,10 +60,10 @@ void DrawSettingsPanel(AppState& s, const BakePass& bake, Actions& act) {
     ImGui::SeparatorText("曲率");
     if (ImGui::RadioButton("符号付き (0.5=平坦, 凸>0.5, 凹<0.5)", &s.mode, 0)) s.dirtyShading = true;
     if (ImGui::RadioButton("絶対値 (0=平坦)", &s.mode, 1)) s.dirtyShading = true;
-    ImGui::Text("サンプル幅 (テクセル)");
+    ImGui::Text("スムージング (回)");
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::SliderInt("##radius", &s.sampleRadius, 1, 16)) s.dirtyShading = true;
-    ImGui::TextDisabled("大きいほど滑らか。小さいと三角形ごとの段差が出ます");
+    if (ImGui::SliderInt("##smooth", &s.smoothing, 0, 64)) s.dirtySmoothing = true;
+    ImGui::TextDisabled("頂点ごとの曲率を隣接頂点と平均化する回数。大きいほど滑らか(0でそのまま)");
     ImGui::Text("パディング (テクセル)");
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::SliderInt("##padding", &s.padding, 0, 256, "%d", ImGuiSliderFlags_Logarithmic)) s.dirtyPadding = true;
