@@ -2,6 +2,8 @@
 
 .obj / .gltf / .glb / .fbx のUV座標を使って、曲率をテクスチャにベイクし、PNG / BMP / TGA で保存するツールです。
 
+![curvtex のスクリーンショット](docs/screenshot.png)
+
 ## ビルド（Windows / Visual Studio 2022 推奨）
 
 ```
