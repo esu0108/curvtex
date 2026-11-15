@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(curvtex LANGUAGES CXX C)  # C: ufbx.c のコンパイル用
+project(curvtex LANGUAGES CXX C RC)  # C: ufbx.c のコンパイル用 / RC: アイコン等のリソース
 
 if(NOT WIN32)
   message(FATAL_ERROR "This project requires Windows (DirectX 12).")
@@ -134,6 +134,9 @@ add_executable(curvtex WIN32
   src/Bmp.h
   src/ImageWriter.cpp
   src/ImageWriter.h
+  src/curvtex.rc
+  src/resource.h
+  res/icon.ico
   src/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
   shaders/pass1.hlsl
   shaders/pass2.hlsl

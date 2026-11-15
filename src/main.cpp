@@ -1,11 +1,13 @@
 #include <Windows.h>
 #include <commdlg.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cwctype>
 #include <exception>
 #include <iterator>
 #include <stdexcept>
@@ -24,6 +26,7 @@
 #include "ImageWriter.h"
 #include "Mesh.h"
 #include "Renderer.h"
+#include "resource.h"
 
 // imgui_impl_win32.h では #if 0 で隠されているので自前で宣言する
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -229,6 +232,7 @@ void DrawUI(AppState& s, Renderer& r, Actions& act) {
     if (ImGui::Button("参照...")) act.browseObj = true;
     ImGui::SameLine();
     if (ImGui::Button("読み込み")) act.load = true;
+    ImGui::TextDisabled("ウィンドウへのドラッグ&ドロップでも読み込めます");
     if (ImGui::Checkbox("スムース法線を再計算", &s.smoothNormals)) act.remesh = true;
     ImGui::EndDisabled();
     ImGui::TextDisabled("位置が同じ頂点を溶接して法線を平滑化します");
@@ -373,6 +377,9 @@ void ApplyDpiScale(float scale) {
     ImGui::GetStyle() = s;
 }
 
+// ドラッグ&ドロップされたファイル。WndProc で受け取り、メインループが次のフレームで処理する(どちらもメインスレッド)。
+std::wstring g_droppedPath;
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;
     switch (msg) {
@@ -386,6 +393,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (g_styleReady) ApplyDpiScale(static_cast<float>(LOWORD(wParam)) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));
         const RECT* r = reinterpret_cast<const RECT*>(lParam);
         SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    case WM_DROPFILES: {
+        // 複数ドロップされた場合は先頭の1つだけを使う
+        HDROP        drop = reinterpret_cast<HDROP>(wParam);
+        const UINT   len  = DragQueryFileW(drop, 0, nullptr, 0);
+        std::wstring path(len, L'\0');
+        if (len > 0) DragQueryFileW(drop, 0, path.data(), len + 1);
+        DragFinish(drop);
+        g_droppedPath = std::move(path);
         return 0;
     }
     case WM_SYSCOMMAND:
@@ -416,10 +433,13 @@ int Run(HINSTANCE hInst, int nShow) {
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    // アイコンは表示サイズに合う画像を .ico から選んで読み込む (大: タスクバー/Alt+Tab, 小: タイトルバー)
+    wc.hIcon   = static_cast<HICON>(LoadImageW(hInst, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(hInst, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
     wc.lpszClassName = L"CurvatureBakerWnd";
     RegisterClassExW(&wc);
 
-    HWND hwnd = CreateWindowW(wc.lpszClassName, L"Curvature Baker", WS_OVERLAPPEDWINDOW, 100, 100, 1400, 850, nullptr, nullptr, hInst, nullptr);
+    HWND hwnd = CreateWindowW(wc.lpszClassName, L"curvtex", WS_OVERLAPPEDWINDOW, 100, 100, 1400, 850, nullptr, nullptr, hInst, nullptr);
     if (!hwnd) throw std::runtime_error("CreateWindow failed");
 
     // 初期サイズは 96DPI 基準の論理サイズ。ウィンドウがあるモニタの DPI に合わせて拡大する。
@@ -430,6 +450,7 @@ int Run(HINSTANCE hInst, int nShow) {
     renderer.Init(hwnd);
     g_renderer = &renderer;
 
+    DragAcceptFiles(hwnd, TRUE); // ファイルのドラッグ&ドロップを受け付ける
     ShowWindow(hwnd, nShow);
     UpdateWindow(hwnd);
 
@@ -516,6 +537,25 @@ int Run(HINSTANCE hInst, int nShow) {
         Actions act;
         DrawUI(state, renderer, act);
         ImGui::Render();
+
+        // ---- ドラッグ&ドロップされたモデルを読み込み要求に変換 ----
+        if (!g_droppedPath.empty()) {
+            const fs::path dropped = std::move(g_droppedPath);
+            g_droppedPath.clear();
+            std::wstring ext = dropped.extension().wstring();
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+            const std::string narrow = Narrow(dropped.wstring());
+            if (state.Loading()) {
+                state.modelStatus = "読み込み中のため、ドロップされたファイルは無視しました";
+            } else if (ext != L".obj" && ext != L".gltf" && ext != L".glb" && ext != L".fbx") {
+                state.modelStatus = "未対応のファイルです（対応: .obj / .gltf / .glb / .fbx）";
+            } else if (narrow.size() >= sizeof(state.objPath)) {
+                state.modelStatus = "パスが長すぎて読み込めません";
+            } else {
+                std::snprintf(state.objPath, sizeof(state.objPath), "%s", narrow.c_str());
+                act.load = true;
+            }
+        }
 
         // ---- UI からの要求を処理 (GPUがアイドルのこのタイミングで実行) ----
         if (act.browseObj) {
