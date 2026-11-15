@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include "MeshBuild.h"
 
 #include <rapidobj/rapidobj.hpp>
 
@@ -6,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <cctype>
+#include <cwctype>
 #include <cmath>
 #include <fstream>
 #include <iterator>
@@ -46,11 +48,7 @@ void Normalize3(float* v) {
 bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
     out = Mesh{};
 
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
-        error = "ファイルが見つかりません（パスを確認してください）";
-        return false;
-    }
+    if (!CheckInputFile(path, error)) return false;
 
     rapidobj::Result result = rapidobj::ParseFile(path, rapidobj::MaterialLibrary::Ignore());
     if (result.error) {
@@ -203,14 +201,22 @@ void ComputeBounds(Mesh& out) {
     out.radius = std::max(0.5f * std::sqrt(d2), 1e-6f);
 }
 
+ModelFormat ModelFormatFromPath(const std::filesystem::path& path) {
+    std::wstring ext = path.extension().wstring();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    if (ext == L".obj") return ModelFormat::Obj;
+    if (ext == L".gltf" || ext == L".glb") return ModelFormat::Gltf;
+    if (ext == L".fbx") return ModelFormat::Fbx;
+    return ModelFormat::Unknown;
+}
+
 bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error) {
-    std::string ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (ext == ".obj") return LoadObj(path, out, error);
-    if (ext == ".gltf" || ext == ".glb") return LoadGltf(path, out, error);
-    if (ext == ".fbx") return LoadFbx(path, out, error);
-    error = "未対応の拡張子です（対応: .obj / .gltf / .glb / .fbx）";
-    return false;
+    switch (ModelFormatFromPath(path)) {
+    case ModelFormat::Obj: return LoadObj(path, out, error);
+    case ModelFormat::Gltf: return LoadGltf(path, out, error);
+    case ModelFormat::Fbx: return LoadFbx(path, out, error);
+    default: error = "未対応の拡張子です（対応: .obj / .gltf / .glb / .fbx）"; return false;
+    }
 }
 
 namespace {

@@ -1,6 +1,8 @@
 #pragma once
 #include <cmath>
 
+#include "Mesh.h"
+
 // ノード変換(アフィン変換)の共通処理。glTF / FBX ローダー双方で使う。
 // 外部ライブラリの行列型に依存しないよう、列ベクトルを素の配列で保持する。
 struct Affine {
@@ -46,3 +48,22 @@ struct Affine {
         }
     }
 };
+
+// ローカル空間の位置・法線(任意)・UV から、変換後の頂点を作る。n が nullptr なら法線は 0 のまま。
+inline Vertex MakeWorldVertex(const Affine& xf, const double p[3], const double* n, float u, float v) {
+    Vertex x{};
+    float  w[3];
+    xf.Point(p, w);
+    x.px = w[0];
+    x.py = w[1];
+    x.pz = w[2];
+    if (n) {
+        xf.Normal(n, w);
+        x.nx = w[0];
+        x.ny = w[1];
+        x.nz = w[2];
+    }
+    x.u = u;
+    x.v = v;
+    return x;
+}

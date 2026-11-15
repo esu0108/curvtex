@@ -17,6 +17,12 @@ struct Mesh {
     float radius    = 1.0f; // バウンディング球半径(曲率レンジの初期値決定に使う)
 };
 
+// 読み込める形式
+enum class ModelFormat { Obj, Gltf, Fbx, Unknown };
+
+// 拡張子(大文字小文字を区別しない)から形式を判定する。
+ModelFormat ModelFormatFromPath(const std::filesystem::path& path);
+
 // 拡張子(.obj / .gltf / .glb / .fbx)で読み込み関数を振り分ける。UV必須。
 bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error);
 

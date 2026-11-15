@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "Mesh.h"
+#include "MeshBuild.h"
 #include "MeshUtil.h"
+#include "PathUtil.h"
 
 namespace {
 
@@ -34,14 +36,9 @@ struct SceneDeleter {
 bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error) {
     out = Mesh{};
 
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
-        error = "ファイルが見つかりません（パスを確認してください）";
-        return false;
-    }
+    if (!CheckInputFile(path, error)) return false;
 
-    const std::u8string u8 = path.u8string();
-    const std::string   p(u8.begin(), u8.end());
+    const std::string p = PathToUtf8(path);
 
     ufbx_load_opts opts{};
     ufbx_error     err{};
@@ -84,27 +81,19 @@ bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error) {
                                  hasNormal ? mesh->vertex_normal.indices.data[ix] : 0u};
                 auto           it = map.find(k);
                 if (it == map.end()) {
-                    Vertex       v{};
-                    const ufbx_vec3 pv = mesh->vertex_position.values.data[k.p];
-                    const double pin[3] = {pv.x, pv.y, pv.z};
-                    float        pw[3];
-                    xf.Point(pin, pw);
-                    v.px = pw[0];
-                    v.py = pw[1];
-                    v.pz = pw[2];
+                    const ufbx_vec3 pv      = mesh->vertex_position.values.data[k.p];
+                    const double    pin[3]  = {pv.x, pv.y, pv.z};
+                    double          nin[3]  = {0, 0, 0};
                     if (hasNormal) {
                         const ufbx_vec3 nv = mesh->vertex_normal.values.data[k.n];
-                        const double    nin[3] = {nv.x, nv.y, nv.z};
-                        float           nw[3];
-                        xf.Normal(nin, nw);
-                        v.nx = nw[0];
-                        v.ny = nw[1];
-                        v.nz = nw[2];
+                        nin[0] = nv.x;
+                        nin[1] = nv.y;
+                        nin[2] = nv.z;
                     }
                     const ufbx_vec2 uv = mesh->vertex_uv.values.data[k.t];
-                    v.u                = static_cast<float>(uv.x); // FBX の v は上向き(本ツールと同じ)なので反転しない
-                    v.v                = static_cast<float>(uv.y);
-                    it                 = map.emplace(k, static_cast<uint32_t>(pm.vertices.size())).first;
+                    // FBX の v は上向き(本ツールと同じ)なので反転しない
+                    const Vertex v = MakeWorldVertex(xf, pin, hasNormal ? nin : nullptr, static_cast<float>(uv.x), static_cast<float>(uv.y));
+                    it = map.emplace(k, static_cast<uint32_t>(pm.vertices.size())).first;
                     pm.vertices.push_back(v);
                 }
                 pm.indices.push_back(it->second);
@@ -112,23 +101,8 @@ bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error) {
         }
         if (pm.indices.empty()) continue;
 
-        if (xf.Mirrored()) { // 鏡像変換では巻き順が反転する
-            for (size_t i = 0; i + 2 < pm.indices.size(); i += 3) std::swap(pm.indices[i + 1], pm.indices[i + 2]);
-        }
-        if (!hasNormal) { // 法線が無いメッシュはスムース法線を生成
-            ComputeBounds(pm);
-            RecomputeSmoothNormals(pm);
-        }
-
-        const uint32_t base = static_cast<uint32_t>(out.vertices.size());
-        out.vertices.insert(out.vertices.end(), pm.vertices.begin(), pm.vertices.end());
-        for (uint32_t i : pm.indices) out.indices.push_back(base + i);
+        AppendPart(out, std::move(pm), xf.Mirrored(), hasNormal); // 鏡像なら巻き順反転 / 法線が無ければ生成 / out へ結合
     }
 
-    if (out.indices.empty()) {
-        error = missingUv ? "このFBXにはUV座標がありません。UV展開してから書き出してください" : "三角形がありません";
-        return false;
-    }
-    ComputeBounds(out);
-    return true;
+    return FinalizeMesh(out, error, missingUv, "このFBXにはUV座標がありません。UV展開してから書き出してください");
 }

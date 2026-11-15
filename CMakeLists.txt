@@ -122,22 +122,50 @@ add_shader(view_ps  view.hlsl  PSMain ps_5_0 g_ViewPS)
 find_package(Threads REQUIRED) # rapidobj は std::thread を使用
 
 add_executable(curvtex WIN32
+  # アプリ
   src/main.cpp
+  src/App.cpp
+  src/App.h
+  src/AppState.h
+  src/Camera.cpp
+  src/Camera.h
+  src/Dialogs.cpp
+  src/Dialogs.h
+  src/Ui.cpp
+  src/Ui.h
+  src/Window.cpp
+  src/Window.h
+  src/PathUtil.h
+  # DirectX12
   src/Renderer.cpp
   src/Renderer.h
+  src/GpuUtil.cpp
+  src/GpuUtil.h
+  src/GpuMesh.cpp
+  src/GpuMesh.h
+  src/BakePass.cpp
+  src/BakePass.h
+  src/ViewPass.cpp
+  src/ViewPass.h
+  # モデル読み込み
   src/Mesh.cpp
   src/Mesh.h
+  src/MeshBuild.cpp
+  src/MeshBuild.h
   src/MeshUtil.h
   src/MeshGltf.cpp
   src/MeshFbx.cpp
+  # 画像書き出し
   src/Bmp.cpp
   src/Bmp.h
   src/ImageWriter.cpp
   src/ImageWriter.h
+  # リソース
   src/curvtex.rc
   src/resource.h
   res/icon.ico
   src/curvtex.manifest # Per-Monitor DPI v2 (MSVC では自動で実行ファイルに埋め込まれる)
+  # シェーダ
   shaders/pass1.hlsl
   shaders/pass2.hlsl
   shaders/view.hlsl

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Mesh.h"
+#include "MeshBuild.h"
 #include "MeshUtil.h"
 
 // accessor ツールで直接読み込むための単純な型(fastgltf::math のベクトル型に依存しない)
@@ -80,7 +81,6 @@ bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& pr
     std::vector<uint32_t> tris;
     auto                  push = [&](uint32_t a, uint32_t b, uint32_t c) {
         if (a >= n || b >= n || c >= n) return;
-        if (xf.Mirrored()) std::swap(b, c); // 鏡像変換では巻き順が反転する
         tris.push_back(a);
         tris.push_back(b);
         tris.push_back(c);
@@ -103,37 +103,15 @@ bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& pr
     if (tris.empty()) return false;
 
     // ワールド(ノード変換後)の頂点へ。glTF の v は下向き(左上原点)なので、本ツールの v 上向きに合わせて反転する。
-    Mesh pm;
-    pm.vertices.resize(n);
+    Mesh part;
+    part.vertices.resize(n);
     for (size_t i = 0; i < n; ++i) {
-        Vertex& v = pm.vertices[i];
-        float   p[3];
-        const double in[3] = {pos[i].x, pos[i].y, pos[i].z};
-        xf.Point(in, p);
-        v.px = p[0];
-        v.py = p[1];
-        v.pz = p[2];
-        if (hasNormal) {
-            float       nn[3];
-            const double nin[3] = {nrm[i].x, nrm[i].y, nrm[i].z};
-            xf.Normal(nin, nn);
-            v.nx = nn[0];
-            v.ny = nn[1];
-            v.nz = nn[2];
-        }
-        v.u = uv[i].x;
-        v.v = 1.0f - uv[i].y;
+        const double p[3]  = {pos[i].x, pos[i].y, pos[i].z};
+        const double nn[3] = {hasNormal ? nrm[i].x : 0.0, hasNormal ? nrm[i].y : 0.0, hasNormal ? nrm[i].z : 0.0};
+        part.vertices[i]   = MakeWorldVertex(xf, p, hasNormal ? nn : nullptr, uv[i].x, 1.0f - uv[i].y);
     }
-    pm.indices = std::move(tris);
-
-    if (!hasNormal) { // 法線が無いプリミティブはスムース法線を生成
-        ComputeBounds(pm);
-        RecomputeSmoothNormals(pm);
-    }
-
-    const uint32_t base = static_cast<uint32_t>(out.vertices.size());
-    out.vertices.insert(out.vertices.end(), pm.vertices.begin(), pm.vertices.end());
-    for (uint32_t i : pm.indices) out.indices.push_back(base + i);
+    part.indices = std::move(tris);
+    AppendPart(out, std::move(part), xf.Mirrored(), hasNormal); // 鏡像なら巻き順反転 / 法線が無ければ生成 / out へ結合
     return true;
 }
 
@@ -142,11 +120,7 @@ bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& pr
 bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) {
     out = Mesh{};
 
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(path, ec)) {
-        error = "ファイルが見つかりません（パスを確認してください）";
-        return false;
-    }
+    if (!CheckInputFile(path, error)) return false;
 
     auto data = fastgltf::GltfDataBuffer::FromPath(path);
     if (data.error() != fastgltf::Error::None) {
@@ -188,11 +162,5 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
                                     });
     }
 
-    if (out.indices.empty()) {
-        error = missingUv ? "このglTFにはUV座標(TEXCOORD_0)がありません。UV展開してから書き出してください"
-                          : "三角形がありません";
-        return false;
-    }
-    ComputeBounds(out);
-    return true;
+    return FinalizeMesh(out, error, missingUv, "このglTFにはUV座標(TEXCOORD_0)がありません。UV展開してから書き出してください");
 }
