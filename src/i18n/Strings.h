@@ -21,7 +21,7 @@ constexpr int kLangCount = static_cast<int>(Lang::Count);
     X(MenuAntiAliasing, "アンチエイリアス", "Anti-aliasing", "抗锯齿", "안티앨리어싱", "Antialiasing", "Anticrénelage", "Kantenglättung", "Антиалиасинг") \
     X(MenuAnisotropic, "異方性フィルタ", "Anisotropic filtering", "各向异性过滤", "이방성 필터링", "Filtrado anisotrópico", "Filtrage anisotrope", "Anisotrope Filterung", "Анизотропная фильтрация") \
     X(OptOff, "オフ", "Off", "关闭", "끔", "Desactivado", "Désactivé", "Aus", "Выкл.") \
-    X(MenuLanguage, "言語 / Language", "言語 / Language", "言語 / Language", "言語 / Language", "言語 / Language", "言語 / Language", "言語 / Language", "言語 / Language") \
+    X(MenuLanguage, "言語", "Language", "语言", "언어", "Idioma", "Langue", "Sprache", "Язык") \
     X(SecModel, "モデル", "Model", "模型", "모델", "Modelo", "Modèle", "Modell", "Модель") \
     X(HintLoadModel, "ファイル→開く、またはウィンドウへのドラッグ&ドロップで読み込めます", "Load a model with File > Open, or by dragging and dropping it onto the window.", "通过“文件 → 打开”或将文件拖放到窗口中来加载模型。", "파일 → 열기 또는 창에 드래그 앤 드롭하여 모델을 불러올 수 있습니다.", "Cargue un modelo con Archivo > Abrir o arrastrándolo y soltándolo en la ventana.", "Chargez un modèle via Fichier > Ouvrir ou par glisser-déposer dans la fenêtre.", "Laden Sie ein Modell über Datei > Öffnen oder per Drag-and-drop in das Fenster.", "Загрузите модель через Файл → Открыть или перетащите её в окно.") \
     X(ChkSmoothNormals, "スムース法線を再計算", "Recompute smooth normals", "重新计算平滑法线", "스무스 법선 다시 계산", "Recalcular normales suaves", "Recalculer les normales lissées", "Glatte Normalen neu berechnen", "Пересчитать сглаженные нормали") \
