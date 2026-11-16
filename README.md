@@ -1,50 +1,75 @@
+[English](README.md) | [日本語](README.ja.md)
+
 # curvtex
 
-.obj / .gltf / .glb / .fbx のUV座標を使って、曲率をテクスチャにベイクし、PNG / BMP / TGA で保存するツールです。
+**curvtex** is a tool for baking mesh curvature into a texture using the UV coordinates of a 3D model.
 
-![curvtex のスクリーンショット](docs/screenshot.png)
+It supports `.obj`, `.gltf`, `.glb`, and `.fbx` formats, and exports the result as a 24-bit BMP image.
 
-## ビルド（Windows / Visual Studio 2022 推奨）
+## Features
 
-```
+- GPU-accelerated curvature calculation using DirectX 12
+- Signed and absolute curvature visualization
+- Adjustable texture resolution (16–4096)
+- Real-time preview of the baked curvature
+- Automatic UV mapping from the input model
+
+## Supported Formats
+
+| Format | Extension |
+|---|---|
+| Wavefront OBJ | `.obj` |
+| glTF | `.gltf`, `.glb` |
+| Autodesk FBX | `.fbx` |
+
+## Build
+
+**Requirements**
+- Windows 10 / 11
+- Visual Studio 2022 or later
+- CMake 3.24 or later
+- Windows SDK (including `fxc.exe`)
+
+Build using CMake:
+
+```bash
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
+```
+
+Run the executable:
+
+```bash
 build\Release\curvtex.exe
 ```
 
-初回の configure 時に FetchContent で次を取得します。
+Dependencies are automatically downloaded through CMake FetchContent during configuration.
 
-- Dear ImGui v1.93.0
-- rapidobj v1.1（ヘッダオンリー）
-- fastgltf v1.0.1（.gltf / .glb。simdjson / simdutf も自動取得）
-- ufbx v0.23.1（.fbx。単一ソース）
+![screenshot of curvtex](docs/screenshot.png)
 
-## シェーダ
+## Usage
 
-HLSL は `shaders/*.hlsl` にあり、ビルド時に `fxc`（Windows SDK）で事前コンパイルされ、
-バイトコードが実行ファイルに埋め込まれます（実行時コンパイルはしません）。
-`fxc.exe` が自動検出できない場合は `-DFXC_EXECUTABLE=<path>` を指定してください。
+1. **Load Model** — Select an OBJ, glTF, GLB, or FBX file.
+2. **Texture Resolution** — Set the output texture width and height.
+3. **Adjust Curvature** — Choose signed or absolute curvature and adjust the maximum curvature value.
+4. **Export** — Save the resulting texture as a 24-bit BMP image.
 
-## 使い方
+Changes to curvature settings are reflected in the preview immediately.
 
-1. 「モデル」: パスを入力するか「参照...」で .obj / .gltf / .glb / .fbx を選び「読み込み」。ウィンドウへのファイルのドラッグ&ドロップでも読み込めます（複数ドロップ時は先頭の1つ）
-2. 「テクスチャサイズ」: 幅/高さ（16〜4096）を入力し「サイズを適用」
-3. 右側のタブで表示を切り替えます。
-   - 「3Dビュー」: 曲率テクスチャを貼ったモデルを表示します。左ドラッグで回転、右/中ドラッグで移動、ホイールでズーム。「ライティング」で陰影の有無、「カメラをリセット」で初期位置に戻せます。
-   - 「テクスチャ」: ベイクしたテクスチャそのものを表示します。
-4. 「曲率」: 符号付き/絶対値の切り替え、スムージング回数、パディング幅、最大曲率で調整します（変更は即時反映）。モードと最大曲率はシェーディングだけ、スムージングは平滑化以降、パディングはパディング以降を再計算するので、ドラッグ中も軽く動きます。
-5. 「画像保存」: パスを入力するか「参照...」で指定し「保存」。拡張子で形式が決まります（.png / .bmp / .tga、いずれも24bit。拡張子なしは .png）。PNGは Windows 標準の WIC で書き出します。
+## Limitations
 
-## 注意点
+- Models must have UV coordinates.
+- UV coordinates outside the `[0, 1]` range are not rendered.
+- Draco and meshopt compressed glTF files are not supported.
+- glTF and FBX scenes are merged into a single mesh using their node transforms.
+- Skinning and morph targets are not evaluated; meshes are processed in their bind pose.
+- FBX uses its first UV set. glTF uses `TEXCOORD_0`.
+- OBJ files without normals are processed using automatically generated smooth normals.
+- Curvature values depend on the coordinate units of the input model. FBX unit conversion is not performed.
 
-- UVが [0,1] の範囲外（タイリング）の部分は描画されません。
-- 曲率は頂点ごとに GPU で計算します。隣接頂点との「(法線の差)・(位置の差) / |位置の差|²」を平均した値で、半径 R の球ではどこでも 1/R になります（凸で正、凹で負）。UV の継ぎ目などで分割された頂点は、位置が同じものを1つにまとめて計算するので、継ぎ目をまたいでも値が連続します。
-- 頂点ごとの曲率は三角形の内側で補間されてテクスチャに書かれます。メッシュが粗いと三角形ごとの変化が見えるので、「スムージング」で隣接頂点との平均化を繰り返してください。
-- 「パディング」でUV島の外側を最寄りのテクセルの値で塗り広げます（既定4テクセル、0で無効）。保存する画像にも反映されます。最寄りのテクセルの探索はジャンプフラッディング（GPU）で行うため、幅を大きくしても負荷はほとんど増えません（パス数は幅の対数に比例）。
-- 法線が無い .obj は、位置ごとのスムース法線を自動生成します。
-- UVが無いモデルは読み込めません（glTFは TEXCOORD_0、FBXは最初のUVセットを使用）。
-- glTF / FBX はシーン内の全メッシュにノード変換を適用して1つに結合します。
-  UV が無いプリミティブは読み飛ばし、スキニング/モーフはバインドポーズのまま扱います。
-- glTF の UV は v が下向きのため、本ツールの v 上向きに合わせて `v = 1 - v` へ変換します（OBJ / FBX はそのまま）。
-- 圧縮メッシュ（Draco / meshopt）のglTFは未対応です。
-- 曲率の単位はファイルの座標単位に依存します（FBXの単位変換は行いません）。
+## Dependencies
+
+- [Dear ImGui](https://github.com/ocornut/imgui)
+- [rapidobj](https://github.com/guybrush77/rapidobj)
+- [fastgltf](https://github.com/spnda/fastgltf)
+- [ufbx](https://github.com/ufbx/ufbx)
