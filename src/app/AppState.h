@@ -1,15 +1,16 @@
 #pragma once
 #include <string>
 
+#include "i18n/Strings.h"
 #include "ui/Camera.h"
 
 // UI が読み書きするアプリの状態 (描画・ファイル処理は App が担当する)。
 struct AppState {
     // ---- ファイル ----
-    std::string modelPath;                      // UTF-8
-    std::string savePath = "curvature.png";     // UTF-8
-    std::string modelStatus = "モデル未読み込み";
-    std::string saveStatus;
+    std::string modelPath;                      // 読み込んだ(読み込み中の)モデルのパス。UTF-8
+    std::string savePath = "curvature.png";     // 保存ダイアログの初期値 / 直近の保存先。UTF-8
+    StatusMsg   modelStatus{Str::StNoModel};    // 言語を切り替えても追従するよう、文字列ではなく ID + 引数で持つ
+    StatusMsg   saveStatus;
 
     // ---- ベイク設定 ----
     int   texW = 1024, texH = 1024;
@@ -35,16 +36,17 @@ struct AppState {
     // ---- 3Dビュー ----
     OrbitCamera camera;
     bool        lit            = true;  // ライティングの有無
+    int         aaSamples      = 4;     // アンチエイリアス (MSAA のサンプル数: 1=オフ, 2, 4, 8)
+    int         anisotropy     = 16;    // 異方性フィルタの倍率 (1=オフ, 2, 4, 8, 16)
     bool        view3dVisible  = false; // 今フレーム 3D タブが表示されているか (UI が設定)
     int         viewReqW = 0, viewReqH = 0; // 3D 表示領域のピクセルサイズ (UI が設定)
 };
 
 // UI からアプリへの要求 (1フレーム分)。
 struct Actions {
-    bool remesh = false;     // スムース法線の切り替え
-    bool browseModel = false;
-    bool load = false;
+    bool remesh    = false; // スムース法線の切り替え
     bool applySize = false;
-    bool browseSave = false;
-    bool save = false;
+    bool openFile  = false; // メニュー: ファイル→開く (ダイアログで選んだモデルを読み込む)
+    bool saveFile  = false; // メニュー: ファイル→保存 (ダイアログで選んだ場所へ画像を保存する)
+    bool exitApp   = false; // メニュー: ファイル→終了
 };

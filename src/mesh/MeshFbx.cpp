@@ -9,6 +9,7 @@
 
 #include "mesh/Mesh.h"
 #include "mesh/MeshBuild.h"
+#include "i18n/Strings.h"
 #include "mesh/MeshUtil.h"
 #include "platform/PathUtil.h"
 
@@ -44,7 +45,7 @@ bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error) {
     ufbx_error     err{};
     std::unique_ptr<ufbx_scene, SceneDeleter> scene(ufbx_load_file(p.c_str(), &opts, &err));
     if (!scene) {
-        error = "FBX解析エラー: " + std::string(err.description.data, err.description.length);
+        error = Tr(Str::ErrFbxParse) + std::string(err.description.data, err.description.length);
         return false;
     }
 
@@ -104,5 +105,5 @@ bool LoadFbx(const std::filesystem::path& path, Mesh& out, std::string& error) {
         AppendPart(out, std::move(pm), xf.Mirrored(), hasNormal); // 鏡像なら巻き順反転 / 法線が無ければ生成 / out へ結合
     }
 
-    return FinalizeMesh(out, error, missingUv, "このFBXにはUV座標がありません。UV展開してから書き出してください");
+    return FinalizeMesh(out, error, missingUv, Tr(Str::ErrFbxNoUv));
 }

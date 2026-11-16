@@ -42,15 +42,18 @@ private:
     };
 
     void InitImGui();
+    void InitFonts();
+    ImFont* FontFor(Lang lang) const;
     void ShutdownImGui();
     void ApplyDpiScale(float scale);
 
     bool PollJobs(); // 状態が変わったら true
-    void HandleDrop(Actions& act);
-    void HandleActions(Actions& act);
+    void HandleDrop();
+    bool HandleActions(const Actions& act); // 保存先が決まって保存を始めるべきなら true
     void RenderFrame();
-    void StartSaveIfRequested(const Actions& act);
+    void StartSaveIfRequested(bool requested);
 
+    void RequestLoad(const std::string& path); // 表示を更新してから読み込みを始める
     void StartLoad(std::string path);
     void StartRemesh();
 
@@ -81,4 +84,12 @@ private:
     // DPI 変更に何度でも追従できるよう、倍率適用前のスタイルを保持する (ScaleAllSizes は累積してしまうため)
     ImGuiStyle baseStyle_;
     bool       imguiReady_ = false;
+
+    // フォント。日本語 / 簡体字中国語 / ハングルは別々のフォントで、どれを先頭にするかで同じ漢字の字形が変わるため、
+    // 言語ごとに先頭を入れ替えたセットを用意して切り替える (ラテン文字・キリル文字は日本語セットを使う)。
+    // フォントファイルの中身は ImGui に所有させず、ここで1度だけ読んで全セットで共有する。
+    std::vector<std::vector<unsigned char>> fontFiles_;
+    ImFont*                                 fontJa_ = nullptr;
+    ImFont*                                 fontZh_ = nullptr;
+    ImFont*                                 fontKo_ = nullptr;
 };

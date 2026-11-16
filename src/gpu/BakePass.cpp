@@ -95,6 +95,7 @@ void BakePass::CreateTargets(UINT w, UINT h) {
     seed_[0].Reset();
     seed_[1].Reset();
     rasterReady_ = false;
+    ++version_;
     w_           = w;
     h_           = h;
 
@@ -329,6 +330,7 @@ void BakePass::RecordShading(const Params& params) {
 
     D3D12_RESOURCE_BARRIER toSrv = Transition(result_.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cl->ResourceBarrier(1, &toSrv);
+    ++version_;
 }
 
 // ---------------------------------------------------------------------------

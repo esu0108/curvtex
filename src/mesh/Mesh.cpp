@@ -1,6 +1,7 @@
 #include "mesh/Mesh.h"
 #include "mesh/MeshBuild.h"
 #include "mesh/Weld.h"
+#include "i18n/Strings.h"
 
 #include <rapidobj/rapidobj.hpp>
 
@@ -65,12 +66,12 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
         }
     }
     if (result.error) {
-        error = "OBJ解析エラー: " + result.error.code.message();
+        error = Tr(Str::ErrObjParse) + result.error.code.message();
         if (result.error.line_num != 0) {
             error += " (line " + std::to_string(result.error.line_num) + ")";
         }
         if (!result.error.line.empty()) {
-            error += " 該当行: " + result.error.line;
+            error += Tr(Str::ErrObjLine) + result.error.line;
         }
         return false;
     }
@@ -93,25 +94,25 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
         }
     }
     if (tris.empty()) {
-        error = "三角形がありません";
+        error = Tr(Str::ErrNoTriangles);
         return false;
     }
 
     const auto&  attr     = result.attributes;
     const size_t posCount = attr.positions.size() / 3;
     if (posCount == 0) {
-        error = "頂点がありません";
+        error = Tr(Str::ErrNoVertices);
         return false;
     }
     if (attr.texcoords.empty()) {
-        error = "このOBJにはUV座標(vt)がありません。UV展開してからUV付きで書き出してください";
+        error = Tr(Str::ErrObjNoUv);
         return false;
     }
 
     bool needNormals = attr.normals.empty();
     for (const auto& idx : tris) {
         if (idx.texcoord_index < 0) {
-            error = "UVを持たない頂点があります";
+            error = Tr(Str::ErrVertexNoUv);
             return false;
         }
         if (idx.normal_index < 0) needNormals = true;
@@ -176,7 +177,7 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
     }
 
     if (out.indices.empty()) {
-        error = "三角形がありません";
+        error = Tr(Str::ErrNoTriangles);
         return false;
     }
 
@@ -216,7 +217,7 @@ bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error) 
     case ModelFormat::Obj: return LoadObj(path, out, error);
     case ModelFormat::Gltf: return LoadGltf(path, out, error);
     case ModelFormat::Fbx: return LoadFbx(path, out, error);
-    default: error = "未対応の拡張子です（対応: .obj / .gltf / .glb / .fbx）"; return false;
+    default: error = Tr(Str::ErrModelExt); return false;
     }
 }
 

@@ -49,10 +49,12 @@ Dependencies are automatically downloaded through CMake FetchContent during conf
 
 ## Usage
 
-1. **Load Model** — Select an OBJ, glTF, GLB, or FBX file.
+1. **Load Model** — Choose **File → Open** (`Ctrl+O`) to select an OBJ, glTF, GLB, or FBX file, or drag and drop it onto the window.
 2. **Texture Resolution** — Set the output texture width and height.
 3. **Adjust Curvature** — Choose signed or absolute curvature and adjust the maximum curvature value.
-4. **Export** — Save the resulting texture as a 24-bit BMP image.
+4. **Export** — Choose **File → Save** (`Ctrl+S`) and pick a destination. PNG, BMP, and TGA are supported; the format follows the file extension.
+5. **View menu** — **View → 言語 / Language** switches the UI language: Japanese, English, Simplified Chinese, Korean, Spanish, French, German, and Russian. The initial language follows the OS display language (English if it is not one of these).
+   **View → Anti-aliasing** (MSAA) and **View → Anisotropic filtering** adjust the quality of the 3D view.
 
 Changes to curvature settings are reflected in the preview immediately.
 

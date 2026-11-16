@@ -9,6 +9,7 @@
 
 #include "mesh/Mesh.h"
 #include "mesh/MeshBuild.h"
+#include "i18n/Strings.h"
 #include "mesh/MeshUtil.h"
 
 // accessor ツールで直接読み込むための単純な型(fastgltf::math のベクトル型に依存しない)
@@ -124,7 +125,7 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
 
     auto data = fastgltf::GltfDataBuffer::FromPath(path);
     if (data.error() != fastgltf::Error::None) {
-        error = "glTF読み込みエラー: " + ErrorText(data.error());
+        error = Tr(Str::ErrGltfLoad) + ErrorText(data.error());
         return false;
     }
 
@@ -132,7 +133,7 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
     fastgltf::Parser parser(fastgltf::Extensions::KHR_mesh_quantization);
     auto             asset = parser.loadGltf(data.get(), path.parent_path(), fastgltf::Options::LoadExternalBuffers);
     if (asset.error() != fastgltf::Error::None) {
-        error = "glTF解析エラー: " + ErrorText(asset.error());
+        error = Tr(Str::ErrGltfParse) + ErrorText(asset.error());
         return false;
     }
     fastgltf::Asset& a = asset.get();
@@ -162,5 +163,5 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
                                     });
     }
 
-    return FinalizeMesh(out, error, missingUv, "このglTFにはUV座標(TEXCOORD_0)がありません。UV展開してから書き出してください");
+    return FinalizeMesh(out, error, missingUv, Tr(Str::ErrGltfNoUv));
 }

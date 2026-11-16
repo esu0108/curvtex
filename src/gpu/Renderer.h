@@ -11,13 +11,16 @@ using Microsoft::WRL::ComPtr;
 
 // ディスクリプタヒープ内のスロット割り当て。ベイク/3Dビューの各パスとアプリ(ImGui)で共有する。
 namespace Slot {
+constexpr UINT kMaxMipLevels = 13; // 曲率テクスチャは最大 4096 なので、4096 → 1 の 13 レベル
 // RTV ヒープ (kRtvCount 個): 0,1 はバックバッファ
 constexpr UINT kRtvCurv   = 2; // 曲率(UV空間)
 constexpr UINT kRtvResult = 3; // 表示用の結果
 constexpr UINT kRtvView   = 4; // 3Dビュー
 constexpr UINT kRtvSeedA  = 5; // ジャンプフラッディングのピンポン用
 constexpr UINT kRtvSeedB  = 6;
-constexpr UINT kRtvCount  = 8;
+constexpr UINT kRtvViewMsaa = 7; // 3Dビューのマルチサンプル描画先
+constexpr UINT kRtvMip    = 8; // 8.. = ミップ生成の描画先 (レベルごと。kMaxMipLevels 個)
+constexpr UINT kRtvCount  = kRtvMip + kMaxMipLevels;
 // SRV/UAV ヒープ。kSrvReserved 以降は ImGui が使う。
 constexpr UINT kSrvCurvTex = 0; // 曲率(UV空間)
 constexpr UINT kSrvResult  = 1;
@@ -33,7 +36,9 @@ constexpr UINT kSrvCurvB    = 12;
 constexpr UINT kUavCurvRaw  = 13;
 constexpr UINT kUavCurvA    = 14;
 constexpr UINT kUavCurvB    = 15;
-constexpr UINT kSrvReserved = 16;
+constexpr UINT kSrvViewTex  = 16; // 3Dビューが貼る曲率テクスチャ (全ミップ)
+constexpr UINT kSrvMipSrc   = 17; // 17.. = ミップ生成の入力用に 1 レベルずつ見る SRV (kMaxMipLevels - 1 個)
+constexpr UINT kSrvReserved = kSrvMipSrc + kMaxMipLevels - 1;
 } // namespace Slot
 
 // DirectX12 の土台: デバイス / キュー / スワップチェーン / ディスクリプタヒープ / フェンス / コマンドリスト。

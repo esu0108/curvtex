@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "image/Bmp.h"
+#include "i18n/Strings.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -32,7 +33,7 @@ std::vector<uint8_t> ToBgr24(uint32_t width, uint32_t height, const uint8_t* rgb
 // 非圧縮 24bit TGA。ディスクリプタのビット5を立てて「左上原点(上→下)」で書く。
 bool WriteTga24(const std::filesystem::path& path, uint32_t width, uint32_t height, const uint8_t* rgba, std::string& error) {
     if (width > 0xFFFF || height > 0xFFFF) {
-        error = "TGAは幅・高さとも65535までです";
+        error = Tr(Str::ErrTgaSize);
         return false;
     }
     uint8_t header[18] = {};
@@ -47,13 +48,13 @@ bool WriteTga24(const std::filesystem::path& path, uint32_t width, uint32_t heig
     const std::vector<uint8_t> bgr = ToBgr24(width, height, rgba);
     std::ofstream              ofs(path, std::ios::binary);
     if (!ofs) {
-        error = "ファイルを開けません";
+        error = Tr(Str::ErrOpenFile);
         return false;
     }
     ofs.write(reinterpret_cast<const char*>(header), sizeof(header));
     ofs.write(reinterpret_cast<const char*>(bgr.data()), static_cast<std::streamsize>(bgr.size()));
     if (!ofs.good()) {
-        error = "書き込みに失敗しました";
+        error = Tr(Str::ErrWriteFail);
         return false;
     }
     return true;
@@ -72,52 +73,52 @@ bool WritePng24(const std::filesystem::path& path, uint32_t width, uint32_t heig
     } guard{uninit};
 
     auto fail = [&](const char* what, HRESULT hr) {
-        char buf[96];
-        std::snprintf(buf, sizeof(buf), "PNG保存に失敗しました (%s, HRESULT=0x%08X)", what, static_cast<unsigned>(hr));
+        char buf[192];
+        std::snprintf(buf, sizeof(buf), Tr(Str::ErrPngFmt), what, static_cast<unsigned>(hr));
         error = buf;
         return false;
     };
 
     ComPtr<IWICImagingFactory> factory;
     HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-    if (FAILED(hr)) return fail("WICファクトリ", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicFactory), hr);
 
     ComPtr<IWICStream> stream;
     hr = factory->CreateStream(&stream);
-    if (FAILED(hr)) return fail("ストリーム作成", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicStream), hr);
     hr = stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE);
-    if (FAILED(hr)) return fail("ファイルを開く", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicOpenFile), hr);
 
     ComPtr<IWICBitmapEncoder> encoder;
     hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
-    if (FAILED(hr)) return fail("エンコーダ作成", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicEncoderCreate), hr);
     hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
-    if (FAILED(hr)) return fail("エンコーダ初期化", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicEncoderInit), hr);
 
     ComPtr<IWICBitmapFrameEncode> frame;
     ComPtr<IPropertyBag2>         props;
     hr = encoder->CreateNewFrame(&frame, &props);
-    if (FAILED(hr)) return fail("フレーム作成", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicFrameCreate), hr);
     hr = frame->Initialize(props.Get());
-    if (FAILED(hr)) return fail("フレーム初期化", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicFrameInit), hr);
     hr = frame->SetSize(width, height);
-    if (FAILED(hr)) return fail("サイズ設定", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicSetSize), hr);
 
     WICPixelFormatGUID format = GUID_WICPixelFormat24bppBGR;
     hr                        = frame->SetPixelFormat(&format);
-    if (FAILED(hr)) return fail("ピクセル形式", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicPixelFormat), hr);
     if (!IsEqualGUID(format, GUID_WICPixelFormat24bppBGR)) {
-        error = "PNGエンコーダが24bit BGRに対応していません";
+        error = Tr(Str::ErrPngNo24bit);
         return false;
     }
 
     std::vector<uint8_t> bgr = ToBgr24(width, height, rgba);
     hr = frame->WritePixels(height, width * 3, static_cast<UINT>(bgr.size()), bgr.data());
-    if (FAILED(hr)) return fail("ピクセル書き込み", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicWritePixels), hr);
     hr = frame->Commit();
-    if (FAILED(hr)) return fail("フレーム確定", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicCommitFrame), hr);
     hr = encoder->Commit();
-    if (FAILED(hr)) return fail("ファイル確定", hr);
+    if (FAILED(hr)) return fail(Tr(Str::WicCommitFile), hr);
     return true;
 }
 
@@ -135,16 +136,16 @@ ImageFormat ImageFormatFromPath(const std::filesystem::path& path) {
 
 bool WriteImage(const std::filesystem::path& path, uint32_t width, uint32_t height, const uint8_t* rgba, std::string& error) {
     if (width == 0 || height == 0 || !rgba) {
-        error = "画像データがありません";
+        error = Tr(Str::ErrNoImage);
         return false;
     }
     switch (ImageFormatFromPath(path)) {
     case ImageFormat::Bmp:
         if (WriteBmp24(path, width, height, rgba)) return true;
-        error = "BMPの書き込みに失敗しました";
+        error = Tr(Str::ErrBmpWrite);
         return false;
     case ImageFormat::Png: return WritePng24(path, width, height, rgba, error);
     case ImageFormat::Tga: return WriteTga24(path, width, height, rgba, error);
-    default: error = "未対応の拡張子です（対応: .bmp / .png / .tga）"; return false;
+    default: error = Tr(Str::ErrImageExt); return false;
     }
 }

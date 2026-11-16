@@ -1,11 +1,12 @@
 #include "mesh/MeshBuild.h"
+#include "i18n/Strings.h"
 
 #include <utility>
 
 bool CheckInputFile(const std::filesystem::path& path, std::string& error) {
     std::error_code ec;
     if (!std::filesystem::is_regular_file(path, ec)) {
-        error = "ファイルが見つかりません（パスを確認してください）";
+        error = Tr(Str::ErrFileNotFound);
         return false;
     }
     return true;
@@ -30,7 +31,7 @@ void AppendPart(Mesh& out, Mesh part, bool mirrored, bool hasNormals) {
 
 bool FinalizeMesh(Mesh& out, std::string& error, bool skippedForMissingUv, const char* missingUvMessage) {
     if (out.indices.empty()) {
-        error = skippedForMissingUv ? missingUvMessage : "三角形がありません";
+        error = skippedForMissingUv ? missingUvMessage : Tr(Str::ErrNoTriangles);
         return false;
     }
     ComputeBounds(out);

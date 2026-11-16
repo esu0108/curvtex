@@ -122,6 +122,8 @@ add_shader(jfa_init_ps jfa.hlsl  PSInit  ps_5_0 g_JfaInitPS)
 add_shader(jfa_step_ps jfa.hlsl  PSStep  ps_5_0 g_JfaStepPS)
 add_shader(view_vs  view.hlsl  VSMain vs_5_0 g_ViewVS)
 add_shader(view_ps  view.hlsl  PSMain ps_5_0 g_ViewPS)
+add_shader(mip_vs   mip.hlsl   VSMain vs_5_0 g_MipVS)
+add_shader(mip_ps   mip.hlsl   PSMain ps_5_0 g_MipPS)
 
 # ---- Application ------------------------------------------------------------
 find_package(Threads REQUIRED) # rapidobj は std::thread を使用
@@ -132,6 +134,9 @@ add_executable(curvtex WIN32
   src/app/App.cpp
   src/app/App.h
   src/app/AppState.h
+  # 多言語化 (UI文字列・エラー文言の日本語/英語)
+  src/i18n/Strings.cpp
+  src/i18n/Strings.h
   # UI
   src/ui/Ui.cpp
   src/ui/Ui.h
@@ -183,11 +188,12 @@ add_executable(curvtex WIN32
   shaders/shade.hlsl
   shaders/jfa.hlsl
   shaders/view.hlsl
+  shaders/mip.hlsl
   ${SHADER_HEADERS}
 )
 
 # .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
-set_source_files_properties(shaders/curvature.hlsl shaders/raster.hlsl shaders/shade.hlsl shaders/jfa.hlsl shaders/view.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
+set_source_files_properties(shaders/curvature.hlsl shaders/raster.hlsl shaders/shade.hlsl shaders/jfa.hlsl shaders/view.hlsl shaders/mip.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include

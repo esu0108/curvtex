@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdio>
 #include <exception>
+#include <fstream>
+#include <initializer_list>
 #include <utility>
 
 #include "platform/Dialogs.h"
@@ -50,13 +52,7 @@ void App::InitImGui() {
     imguiReady_ = true;
     ApplyDpiScale(ImGui_ImplWin32_GetDpiScaleForHwnd(window_.Handle()));
 
-    // 日本語フォント(1.92以降は動的グリフ読み込みなので範囲指定は不要)
-    for (const char* path : {"C:\\Windows\\Fonts\\meiryo.ttc", "C:\\Windows\\Fonts\\YuGothR.ttc", "C:\\Windows\\Fonts\\msgothic.ttc"}) {
-        if (fs::exists(path)) {
-            io.Fonts->AddFontFromFileTTF(path, 18.0f);
-            break;
-        }
-    }
+    InitFonts();
 
     ImGui_ImplWin32_Init(window_.Handle());
 
@@ -71,6 +67,63 @@ void App::InitImGui() {
     ii.SrvDescriptorFreeFn  = SrvFree;
     ii.UserData             = &renderer_;
     ImGui_ImplDX12_Init(&ii);
+}
+
+// 1.92 以降は動的グリフ読み込みなので、グリフの範囲指定は不要。
+void App::InitFonts() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    enum Script { kJa, kZh, kKo, kScriptCount };
+    // 各文字種の候補 (先に見つかったものを使う)
+    const std::vector<const char*> candidates[kScriptCount] = {
+        {"C:\\Windows\\Fonts\\meiryo.ttc", "C:\\Windows\\Fonts\\YuGothR.ttc", "C:\\Windows\\Fonts\\msgothic.ttc"},
+        {"C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\simsun.ttc"},
+        {"C:\\Windows\\Fonts\\malgun.ttf", "C:\\Windows\\Fonts\\gulim.ttc"},
+    };
+
+    fontFiles_.clear();
+    fontFiles_.reserve(kScriptCount);
+    int fileIndex[kScriptCount] = {-1, -1, -1};
+    for (int sc = 0; sc < kScriptCount; ++sc) {
+        for (const char* path : candidates[sc]) {
+            std::ifstream ifs(fs::path(path), std::ios::binary | std::ios::ate);
+            if (!ifs) continue;
+            const std::streamsize size = ifs.tellg();
+            if (size <= 0) continue;
+            std::vector<unsigned char> data(static_cast<size_t>(size));
+            ifs.seekg(0);
+            if (!ifs.read(reinterpret_cast<char*>(data.data()), size)) continue;
+            fileIndex[sc] = static_cast<int>(fontFiles_.size());
+            fontFiles_.push_back(std::move(data));
+            break;
+        }
+    }
+
+    // order の先頭を主フォントにし、残りを不足グリフの補完として結合する。
+    auto addSet = [&](std::initializer_list<int> order) -> ImFont* {
+        ImFont* primary = nullptr;
+        for (int sc : order) {
+            if (fileIndex[sc] < 0) continue;
+            std::vector<unsigned char>& data = fontFiles_[static_cast<size_t>(fileIndex[sc])];
+            ImFontConfig                cfg;
+            cfg.FontDataOwnedByAtlas = false; // 中身は fontFiles_ が持つ (複数セットで共有)
+            cfg.MergeMode            = primary != nullptr;
+            ImFont* f                = io.Fonts->AddFontFromMemoryTTF(data.data(), static_cast<int>(data.size()), 18.0f, &cfg);
+            if (!primary) primary = f;
+        }
+        return primary ? primary : io.Fonts->AddFontDefault(); // 日本語フォントが全く無い環境でも、英語などは表示できる
+    };
+    fontJa_ = addSet({kJa, kZh, kKo});
+    fontZh_ = addSet({kZh, kJa, kKo});
+    fontKo_ = addSet({kKo, kJa, kZh});
+}
+
+ImFont* App::FontFor(Lang lang) const {
+    switch (lang) {
+    case Lang::Zh: return fontZh_;
+    case Lang::Ko: return fontKo_;
+    default: return fontJa_; // 日本語・英語・欧州言語 (ラテン文字・キリル文字は日本語フォントにある)
+    }
 }
 
 void App::ShutdownImGui() {
@@ -139,13 +192,15 @@ int App::Run(int nShow) {
         ImGui::NewFrame();
 
         Actions act;
+        ImGui::PushFont(FontFor(GetLang()), 0.0f); // 0.0f = サイズはそのまま
         DrawUI(state_, bake_, view_, act);
+        ImGui::PopFont();
         ImGui::Render();
 
-        HandleDrop(act);
-        HandleActions(act); // UI からの要求を処理 (GPU がアイドルのこのタイミングで実行)
+        HandleDrop();
+        const bool saveNow = HandleActions(act); // UI からの要求を処理 (GPU がアイドルのこのタイミングで実行)
         RenderFrame();
-        StartSaveIfRequested(act); // 保存 (フレーム完了後)
+        StartSaveIfRequested(saveNow); // 保存 (フレーム完了後)
     }
 
     // 終了時: 保存中ならファイルが途中で切れないよう完了を待つ
@@ -181,7 +236,7 @@ Result BuildMeshJob(const std::string& path, Mesh base, bool smooth) {
         r.ok    = true;
     } catch (const std::exception& e) {
         r.ok  = false;
-        r.err = std::string("例外: ") + e.what();
+        r.err = std::string(Tr(Str::ExceptionPrefix)) + e.what();
     }
     return r;
 }
@@ -208,7 +263,7 @@ bool App::PollJobs() {
         changed = true;
         const SaveResult sr = saveJob_.get();
         state_.saving       = false;
-        state_.saveStatus   = sr.ok ? "保存しました: " + sr.message : "保存に失敗しました: " + sr.message;
+        state_.saveStatus   = StatusMsg{sr.ok ? Str::StSaved : Str::StSaveFail, sr.message};
     }
 
     // ---- モデル読み込みの完了確認 (GPUはアイドル) ----
@@ -227,15 +282,18 @@ bool App::PollJobs() {
                 if (!loadIsRemesh_) {
                     state_.defaultMaxCurv = 4.0f / r.mesh.radius;
                     state_.maxCurv        = state_.defaultMaxCurv;
-                    char buf[256];
-                    std::snprintf(buf, sizeof(buf), "読み込み完了: 頂点 %zu / 三角形 %zu / 半径 %.4g", r.mesh.vertices.size(), r.mesh.indices.size() / 3, r.mesh.radius);
-                    state_.modelStatus = buf;
+                    StatusMsg m;
+                    m.id               = Str::StLoaded;
+                    m.verts            = r.mesh.vertices.size();
+                    m.tris             = r.mesh.indices.size() / 3;
+                    m.radius           = r.mesh.radius;
+                    state_.modelStatus = m;
                 }
             } catch (const std::exception& e) {
-                state_.modelStatus = std::string("GPUへの転送に失敗: ") + e.what();
+                state_.modelStatus = StatusMsg{Str::StGpuFail, e.what()};
             }
         } else {
-            state_.modelStatus = (loadIsRemesh_ ? "メッシュ更新に失敗: " : "読み込み失敗: ") + r.err;
+            state_.modelStatus = StatusMsg{loadIsRemesh_ ? Str::StRemeshFail : Str::StLoadFail, r.err};
         }
     }
     return changed;
@@ -244,43 +302,46 @@ bool App::PollJobs() {
 // ---------------------------------------------------------------------------
 // UI からの要求
 // ---------------------------------------------------------------------------
-void App::HandleDrop(Actions& act) {
+void App::RequestLoad(const std::string& path) {
+    state_.modelPath   = path;
+    state_.modelStatus = StatusMsg{Str::StLoading};
+    StartLoad(CleanPath(path));
+}
+
+void App::HandleDrop() {
     if (!hasPendingDrop_) return;
     hasPendingDrop_ = false;
     const fs::path dropped = std::move(pendingDrop_);
 
     if (state_.loading) {
-        state_.modelStatus = "読み込み中のため、ドロップされたファイルは無視しました";
+        state_.modelStatus = StatusMsg{Str::StDropBusy};
     } else if (ModelFormatFromPath(dropped) == ModelFormat::Unknown) {
-        state_.modelStatus = "未対応のファイルです（対応: .obj / .gltf / .glb / .fbx）";
+        state_.modelStatus = StatusMsg{Str::StDropUnsupported};
     } else {
-        state_.modelPath = PathToUtf8(dropped);
-        act.load         = true;
+        RequestLoad(PathToUtf8(dropped));
     }
 }
 
-void App::HandleActions(Actions& act) {
-    if (act.browseModel) {
+bool App::HandleActions(const Actions& act) {
+    if (act.exitApp) PostMessageW(window_.Handle(), WM_CLOSE, 0, 0); // 通常のクローズと同じ経路 (WM_DESTROY → WM_QUIT) で終了する
+
+    if (act.openFile && !state_.loading) {
         const std::string p = OpenModelDialog(window_.Handle());
-        if (!p.empty()) {
-            state_.modelPath = p;
-            act.load         = true;
-        }
+        if (!p.empty()) RequestLoad(p);
     }
-    if (act.load && !state_.modelPath.empty() && !state_.loading) {
-        state_.modelStatus = "読み込み中...";
-        StartLoad(CleanPath(state_.modelPath));
-    } else if (act.remesh && state_.hasMesh && !state_.loading) {
-        StartRemesh();
-    }
+    if (act.remesh && state_.hasMesh && !state_.loading) StartRemesh();
     if (act.applySize) {
         bake_.Resize(static_cast<UINT>(state_.texW), static_cast<UINT>(state_.texH));
         state_.dirtyGeometry = true;
     }
-    if (act.browseSave) {
+    if (act.saveFile && state_.hasBaked && !state_.saving) {
         const std::string p = SaveImageDialog(window_.Handle(), state_.savePath);
-        if (!p.empty()) state_.savePath = p;
+        if (!p.empty()) {
+            state_.savePath = p;
+            return true; // 画素の読み出しはフレーム描画の後で行う
+        }
     }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +349,12 @@ void App::HandleActions(Actions& act) {
 // ---------------------------------------------------------------------------
 void App::RenderFrame() {
     const bool drawView = state_.view3dVisible && state_.hasMesh && state_.hasBaked;
-    if (drawView) view_.Resize(static_cast<UINT>(state_.viewReqW), static_cast<UINT>(state_.viewReqH)); // 記録前にサイズ追従
+    if (drawView) {
+        // 記録前に品質設定とサイズへ追従する (どちらも変わったときだけ作り直す)
+        view_.SetQuality(static_cast<UINT>(state_.aaSamples), static_cast<UINT>(state_.anisotropy));
+        view_.PrepareTexture(bake_.Width(), bake_.Height());
+        view_.Resize(static_cast<UINT>(state_.viewReqW), static_cast<UINT>(state_.viewReqH));
+    }
 
     renderer_.BeginFrame();
     if (state_.hasMesh && state_.AnyDirty()) {
@@ -326,18 +392,18 @@ void App::RenderFrame() {
 
 // GPU からの読み出しだけメインスレッドで行い、PNG エンコードとファイル書き込みはワーカーで実行する。
 // 読み出した画素は複製済みなので、保存中にパラメータを変えても出力は変わらない。
-void App::StartSaveIfRequested(const Actions& act) {
-    if (!act.save || !state_.hasBaked || state_.savePath.empty() || state_.saving) return;
+void App::StartSaveIfRequested(bool requested) {
+    if (!requested || !state_.hasBaked || state_.savePath.empty() || state_.saving) return;
 
     fs::path out = PathFromUtf8(state_.savePath);
     if (!out.has_extension()) out.replace_extension(L".png");
 
     std::vector<uint8_t> rgba;
     if (!bake_.Readback(rgba)) {
-        state_.saveStatus = "保存に失敗しました（結果の読み出しに失敗）";
+        state_.saveStatus = StatusMsg{Str::StReadbackFail};
         return;
     }
-    state_.saveStatus = "保存中: " + PathToUtf8(out);
+    state_.saveStatus = StatusMsg{Str::StSaving, PathToUtf8(out)};
     state_.saving     = true;
     saveJob_          = std::async(std::launch::async, [out = std::move(out), rgba = std::move(rgba), w = bake_.Width(), h = bake_.Height()]() {
         SaveResult  r;

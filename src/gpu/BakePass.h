@@ -33,6 +33,9 @@ public:
     // 結果テクスチャを RGBA8 で読み戻す (フレーム外で呼ぶ)
     bool Readback(std::vector<uint8_t>& rgba);
 
+    // 結果テクスチャの内容が変わるたびに増える (作り直し・シェーディングの実行)。派生テクスチャ(ミップなど)の更新判定に使う。
+    uint64_t Version() const { return version_; }
+
     UINT Width() const { return w_; }
     UINT Height() const { return h_; }
     D3D12_GPU_DESCRIPTOR_HANDLE ResultSrv() const { return r_->SrvGpu(Slot::kSrvResult); }
@@ -48,6 +51,7 @@ private:
     UINT      w_ = 1024, h_ = 1024;
 
     UINT seedSlot_    = Slot::kSrvSeedA; // ジャンプフラッディングの最終結果が入っている SRV スロット
+    uint64_t version_     = 1;
     bool rasterReady_ = false;           // ラスタライズ済みか (ターゲット作り直しで false に戻る)
 
     gpu::ComPtr<ID3D12Resource>      curvTex_, result_;
