@@ -129,7 +129,8 @@ void CurvatureCompute::SetGraph(const CurvatureGraph& g) {
     std::vector<ComPtr<ID3D12Resource>> staging;
     for (const Item& it : items) {
         const UINT64 size = std::max<UINT64>(it.bytes, 16); // 空のバッファ(隣接なし)でも作れるように
-        *it.dst           = CreateDefaultBuffer(dev, size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, "CreateCommittedResource(graph)");
+        // バッファは必ず COMMON で作られる (COPY_DEST などを指定しても無視されて警告が出る)。最初のコピーで暗黙に COPY_DEST へ昇格する。
+        *it.dst = CreateDefaultBuffer(dev, size, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, "CreateCommittedResource(graph)");
         if (it.bytes > 0) {
             staging.push_back(CreateUploadBuffer(dev, it.data, it.bytes));
         } else {
@@ -151,10 +152,16 @@ void CurvatureCompute::SetGraph(const CurvatureGraph& g) {
     const UINT srvSlots[3] = {Slot::kSrvCurvRaw, Slot::kSrvCurvA, Slot::kSrvCurvB};
     const UINT uavSlots[3] = {Slot::kUavCurvRaw, Slot::kUavCurvA, Slot::kUavCurvB};
     for (int i = 0; i < 3; ++i) {
-        curv_[i] = CreateDefaultBuffer(dev, static_cast<UINT64>(n) * sizeof(float), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, kRead, "CreateCommittedResource(curvature)");
+        curv_[i] = CreateDefaultBuffer(dev, static_cast<UINT64>(n) * sizeof(float), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON, "CreateCommittedResource(curvature)");
         CreateBufferSrv(dev, curv_[i].Get(), n, sizeof(float), r_->SrvCpu(srvSlots[i]));
         CreateBufferUav(dev, curv_[i].Get(), n, sizeof(float), r_->SrvCpu(uavSlots[i]));
     }
+    // COMMON で作られているので、Dispatch が前提にしている「読み取り状態(kRead)」へ明示的に移しておく
+    r_->ExecuteImmediate([&](ID3D12GraphicsCommandList* cl) {
+        D3D12_RESOURCE_BARRIER b[3];
+        for (int i = 0; i < 3; ++i) b[i] = gpu::Transition(curv_[i].Get(), D3D12_RESOURCE_STATE_COMMON, kRead);
+        cl->ResourceBarrier(3, b);
+    });
     nodeCount_ = n;
     finalSlot_ = Slot::kSrvCurvRaw;
 }
