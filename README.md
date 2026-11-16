@@ -4,7 +4,7 @@
 
 **curvtex** is a tool for baking mesh curvature into a texture using the UV coordinates of a 3D model.
 
-It supports `.obj`, `.gltf`, `.glb`, and `.fbx` formats, and exports the result as a 24-bit BMP image.
+![screenshot of curvtex](docs/screenshot.png)
 
 ## Features
 
@@ -45,7 +45,7 @@ build\Release\curvtex.exe
 
 Dependencies are automatically downloaded through CMake FetchContent during configuration.
 
-![screenshot of curvtex](docs/screenshot.png)
+HLSL shaders are precompiled at build time using `fxc.exe`. If the tool cannot be detected automatically, please specify its path using `-DFXC_EXECUTABLE=<path>`.
 
 ## Usage
 
