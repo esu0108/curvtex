@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <future>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,18 +22,20 @@
 // アプリ本体。ウィンドウ・レンダラ・UI の組み立てと、読み込み/保存ジョブ、メインループを持つ。
 class App {
 public:
-    explicit App( HINSTANCE hInst ) : hInst_( hInst ) {}
+    explicit App(HINSTANCE hInst) : hInst_(hInst) {}
     ~App();
 
-    int Run( int nShow );
+    int Run(int nShow);
 
 private:
     // バックグラウンドスレッドでの読み込み結果
     struct LoadResult {
         bool        ok = false;
         std::string err;
-        Mesh        base; // ファイルから読み込んだまま
-        Mesh        mesh; // スムース法線適用後(GPUへ送る)
+        std::shared_ptr<const ModelScene> scene; // 全パーツ (新規読み込みなら読み込んだもの、メッシュ更新なら引き継いだもの)
+        ModelSelection sel;   // このメッシュを作ったときの選択
+        Mesh        base;     // 選択したパーツを結合したまま
+        Mesh        mesh;     // スムース法線適用後(GPUへ送る)
         CurvatureGraph graph; // mesh から作った曲率計算用の隣接グラフ
     };
     // 画像保存(エンコード + ファイル書き込み)の結果
@@ -43,20 +46,20 @@ private:
 
     void InitImGui();
     void InitFonts();
-    ImFont* FontFor( Lang lang ) const;
+    ImFont* FontFor(Lang lang) const;
     void ShutdownImGui();
-    void ApplyDpiScale( float scale );
+    void ApplyDpiScale(float scale);
 
     bool PollJobs(); // 状態が変わったら true
     void HandleDrop();
-    bool HandleActions( const Actions& act ); // 保存先が決まって保存を始めるべきなら true
+    bool HandleActions(const Actions& act); // 保存先が決まって保存を始めるべきなら true
     void RenderFrame();
-    void StartSaveIfRequested( bool requested );
+    void StartSaveIfRequested(bool requested);
     void UpdateTexturePixels(); // テクスチャタブのピクセル値表示用に、結果テクスチャを CPU へ読み戻す
 
-    void RequestLoad( const std::string& path ); // 表示を更新してから読み込みを始める
-    void StartLoad( std::string path );
-    void StartRemesh();
+    void RequestLoad(const std::string& path); // 表示を更新してから読み込みを始める
+    void StartLoad(std::string path);
+    void StartRemesh(const ModelSelection& sel); // 読み込み済みのシーンから、選択を反映してメッシュを作り直す
 
     HINSTANCE hInst_;
     Window    window_;
@@ -76,7 +79,7 @@ private:
     // 再描画の要否。入力などがあれば kRedrawFrames まで引き上げ、描くたびに減らす。0 の間はメッセージ待ちで眠る。
     // (ImGui は入力の反映に数フレームかかるので、入力後は少し多めに描く)
     static constexpr int kRedrawFrames = 3;
-    int                  redraw_ = kRedrawFrames;
+    int                  redraw_       = kRedrawFrames;
     bool                 JobsRunning() const { return state_.loading || state_.saving; }
 
     std::filesystem::path pendingDrop_; // ドロップされたファイル (次のフレームで処理)
@@ -90,7 +93,7 @@ private:
     // 言語ごとに先頭を入れ替えたセットを用意して切り替える (ラテン文字・キリル文字は日本語セットを使う)。
     // フォントファイルの中身は ImGui に所有させず、ここで1度だけ読んで全セットで共有する。
     std::vector<std::vector<unsigned char>> fontFiles_;
-    ImFont* fontJa_ = nullptr;
-    ImFont* fontZh_ = nullptr;
-    ImFont* fontKo_ = nullptr;
+    ImFont*                                 fontJa_ = nullptr;
+    ImFont*                                 fontZh_ = nullptr;
+    ImFont*                                 fontKo_ = nullptr;
 };

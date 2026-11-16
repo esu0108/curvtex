@@ -47,8 +47,8 @@ void Normalize3(float* v) {
 
 } // namespace
 
-bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
-    out = Mesh{};
+bool LoadObj(const std::filesystem::path& path, ModelScene& out, std::string& error) {
+    out = ModelScene{};
 
     if (!CheckInputFile(path, error)) return false;
 
@@ -78,22 +78,30 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
 
     // rapidobj::Triangulate は MaterialLibrary::Ignore() と併用すると material_ids が空で
     // クラッシュするため使わず、面をファン分割して三角形リストを自前で作る。
-    std::vector<rapidobj::Index> tris;
+    // シェイプ (o / g) ごとに1つのメッシュにする。マテリアルは読まない (.mtl を無視している) ので、全パーツ「マテリアルなし」。
+    struct ShapeTris {
+        std::string                  name;
+        std::vector<rapidobj::Index> tris;
+    };
+    std::vector<ShapeTris> shapes;
     for (const auto& shape : result.shapes) {
+        ShapeTris   st;
+        st.name           = shape.name;
         const auto& mesh = shape.mesh;
         size_t      off  = 0;
         for (size_t f = 0; f < mesh.num_face_vertices.size(); ++f) {
             const size_t n = mesh.num_face_vertices[f];
             if (off + n > mesh.indices.size()) break; // 不正データ防止
             for (size_t i = 1; i + 1 < n; ++i) {
-                tris.push_back(mesh.indices[off]);
-                tris.push_back(mesh.indices[off + i]);
-                tris.push_back(mesh.indices[off + i + 1]);
+                st.tris.push_back(mesh.indices[off]);
+                st.tris.push_back(mesh.indices[off + i]);
+                st.tris.push_back(mesh.indices[off + i + 1]);
             }
             off += n;
         }
+        if (!st.tris.empty()) shapes.push_back(std::move(st));
     }
-    if (tris.empty()) {
+    if (shapes.empty()) {
         error = Tr(Str::ErrNoTriangles);
         return false;
     }
@@ -110,40 +118,50 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
     }
 
     bool needNormals = attr.normals.empty();
-    for (const auto& idx : tris) {
-        if (idx.texcoord_index < 0) {
-            error = Tr(Str::ErrVertexNoUv);
-            return false;
+    for (const auto& st : shapes) {
+        for (const auto& idx : st.tris) {
+            if (idx.texcoord_index < 0) {
+                error = Tr(Str::ErrVertexNoUv);
+                return false;
+            }
+            if (idx.normal_index < 0) needNormals = true;
         }
-        if (idx.normal_index < 0) needNormals = true;
     }
 
-    // 法線が無い(または一部欠けている)場合は位置ごとのスムース法線を生成
+    // 法線が無い(または一部欠けている)場合は位置ごとのスムース法線を生成 (シェイプをまたいで共有する)
     std::vector<std::array<float, 3>> smooth;
     if (needNormals) {
         smooth.assign(posCount, {0.f, 0.f, 0.f});
-        for (size_t i = 0; i + 2 < tris.size(); i += 3) {
-            const float* p0 = &attr.positions[3 * tris[i + 0].position_index];
-            const float* p1 = &attr.positions[3 * tris[i + 1].position_index];
-            const float* p2 = &attr.positions[3 * tris[i + 2].position_index];
-            float e1[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
-            float e2[3] = {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
-            float n[3]  = {e1[1] * e2[2] - e1[2] * e2[1],
-                           e1[2] * e2[0] - e1[0] * e2[2],
-                           e1[0] * e2[1] - e1[1] * e2[0]}; // 面積重み付き
-            for (int k = 0; k < 3; ++k) {
-                auto& sn = smooth[tris[i + k].position_index];
-                sn[0] += n[0];
-                sn[1] += n[1];
-                sn[2] += n[2];
+        for (const auto& st : shapes) {
+            const auto& tris = st.tris;
+            for (size_t i = 0; i + 2 < tris.size(); i += 3) {
+                const float* p0 = &attr.positions[3 * tris[i + 0].position_index];
+                const float* p1 = &attr.positions[3 * tris[i + 1].position_index];
+                const float* p2 = &attr.positions[3 * tris[i + 2].position_index];
+                float e1[3] = {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]};
+                float e2[3] = {p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]};
+                float n[3]  = {e1[1] * e2[2] - e1[2] * e2[1],
+                               e1[2] * e2[0] - e1[0] * e2[2],
+                               e1[0] * e2[1] - e1[1] * e2[0]}; // 面積重み付き
+                for (int k = 0; k < 3; ++k) {
+                    auto& sn = smooth[tris[i + k].position_index];
+                    sn[0] += n[0];
+                    sn[1] += n[1];
+                    sn[2] += n[2];
+                }
             }
         }
         for (auto& s : smooth) Normalize3(s.data());
     }
 
-    std::unordered_map<Key, uint32_t, KeyHash> map;
-    {
-        for (const auto& idx : tris) {
+    for (const auto& st : shapes) {
+        MeshPart part;
+        part.meshIndex     = static_cast<int>(out.meshNames.size());
+        part.materialIndex = -1;
+        part.uvs.resize(1);
+
+        std::unordered_map<Key, uint32_t, KeyHash> map;
+        for (const auto& idx : st.tris) {
             Key k{idx.position_index, idx.texcoord_index, needNormals ? -1 : idx.normal_index};
             auto it = map.find(k);
             if (it == map.end()) {
@@ -165,24 +183,18 @@ bool LoadObj(const std::filesystem::path& path, Mesh& out, std::string& error) {
                     v.ny = n[1];
                     v.nz = n[2];
                 }
-                v.u = attr.texcoords[2 * idx.texcoord_index + 0];
-                v.v = attr.texcoords[2 * idx.texcoord_index + 1];
-
-                uint32_t newIndex = static_cast<uint32_t>(out.vertices.size());
-                out.vertices.push_back(v);
+                const uint32_t newIndex = static_cast<uint32_t>(part.geo.vertices.size());
+                part.geo.vertices.push_back(v);
+                part.uvs[0].push_back({attr.texcoords[2 * idx.texcoord_index + 0], attr.texcoords[2 * idx.texcoord_index + 1]});
                 it = map.emplace(k, newIndex).first;
             }
-            out.indices.push_back(it->second);
+            part.geo.indices.push_back(it->second);
         }
+        out.meshNames.push_back(st.name);
+        AddPart(out, std::move(part), false, true); // 法線は設定済み
     }
 
-    if (out.indices.empty()) {
-        error = Tr(Str::ErrNoTriangles);
-        return false;
-    }
-
-    ComputeBounds(out);
-    return true;
+    return FinalizeScene(out, error, false, "");
 }
 
 void ComputeBounds(Mesh& out) {
@@ -212,13 +224,56 @@ ModelFormat ModelFormatFromPath(const std::filesystem::path& path) {
     return ModelFormat::Unknown;
 }
 
-bool LoadMesh(const std::filesystem::path& path, Mesh& out, std::string& error) {
+bool LoadScene(const std::filesystem::path& path, ModelScene& out, std::string& error) {
     switch (ModelFormatFromPath(path)) {
     case ModelFormat::Obj: return LoadObj(path, out, error);
     case ModelFormat::Gltf: return LoadGltf(path, out, error);
     case ModelFormat::Fbx: return LoadFbx(path, out, error);
     default: error = Tr(Str::ErrModelExt); return false;
     }
+}
+
+ModelSelection SelectAll(const ModelScene& scene) {
+    ModelSelection s;
+    s.meshes.assign(scene.meshNames.size(), 1);
+    s.materials.assign(scene.materialNames.size(), 1);
+    s.uvChannel = 0;
+    return s;
+}
+
+bool BuildMesh(const ModelScene& scene, const ModelSelection& sel, Mesh& out, std::string& error) {
+    out = Mesh{};
+    const int ch = std::clamp(sel.uvChannel, 0, kMaxUvChannels - 1);
+
+    bool anySelected = false, skippedForUv = false;
+    for (const MeshPart& p : scene.parts) {
+        const bool meshOn = p.meshIndex >= 0 && static_cast<size_t>(p.meshIndex) < sel.meshes.size() && sel.meshes[p.meshIndex];
+        const bool matOn  = p.materialIndex >= 0 && static_cast<size_t>(p.materialIndex) < sel.materials.size() && sel.materials[p.materialIndex];
+        if (!meshOn || !matOn) continue;
+        anySelected = true;
+        if (static_cast<size_t>(ch) >= p.uvs.size() || p.uvs[ch].size() != p.geo.vertices.size()) { // 選んだ UV チャンネルを持たない
+            skippedForUv = true;
+            continue;
+        }
+
+        const uint32_t base = static_cast<uint32_t>(out.vertices.size());
+        out.vertices.reserve(out.vertices.size() + p.geo.vertices.size());
+        for (size_t i = 0; i < p.geo.vertices.size(); ++i) {
+            Vertex v = p.geo.vertices[i];
+            v.u      = p.uvs[ch][i][0];
+            v.v      = p.uvs[ch][i][1];
+            out.vertices.push_back(v);
+        }
+        out.indices.reserve(out.indices.size() + p.geo.indices.size());
+        for (uint32_t i : p.geo.indices) out.indices.push_back(base + i);
+    }
+
+    if (out.indices.empty()) {
+        error = (anySelected && skippedForUv) ? Tr(Str::ErrSelNoUv) : Tr(Str::ErrSelEmpty);
+        return false;
+    }
+    ComputeBounds(out);
+    return true;
 }
 
 void RecomputeSmoothNormals(Mesh& m) {

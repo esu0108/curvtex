@@ -8,7 +8,7 @@
 // printf の指定子 (%u %zu %s など) は、全言語で同じ順序で並べること。
 
 enum class Lang { Ja, En, Zh, Ko, Es, Fr, De, Ru, Count };
-constexpr int kLangCount = static_cast<int>( Lang::Count );
+constexpr int kLangCount = static_cast<int>(Lang::Count);
 
 // clang-format off
 #define I18N_STRINGS(X) \
@@ -56,6 +56,17 @@ constexpr int kLangCount = static_cast<int>( Lang::Count );
     X(LabelPixel, "ピクセル", "Pixel", "像素", "픽셀", "Píxel", "Pixel", "Pixel", "Пиксель") \
     X(LabelValue, "表示値", "Display value", "显示值", "표시 값", "Valor mostrado", "Valeur affichée", "Anzeigewert", "Значение") \
     X(LabelCurvature, "曲率", "Curvature", "曲率", "곡률", "Curvatura", "Courbure", "Krümmung", "Кривизна") \
+    X(SecParts, "ベイク対象", "Bake targets", "烘焙对象", "베이크 대상", "Objetivos del bakeo", "Cibles du bake", "Bake-Ziele", "Объекты запекания") \
+    X(LabelMeshes, "メッシュ", "Meshes", "网格", "메시", "Mallas", "Maillages", "Meshes", "Меши") \
+    X(LabelMaterials, "マテリアル", "Materials", "材质", "머티리얼", "Materiales", "Matériaux", "Materialien", "Материалы") \
+    X(LabelUvChannel, "UVチャンネル", "UV channel", "UV 通道", "UV 채널", "Canal UV", "Canal UV", "UV-Kanal", "UV-канал") \
+    X(BtnAll, "すべて", "All", "全部", "전체", "Todos", "Tous", "Alle", "Все") \
+    X(BtnNone, "なし", "None", "无", "없음", "Ninguno", "Aucun", "Keine", "Нет") \
+    X(BtnApplySelection, "選択を適用", "Apply selection", "应用选择", "선택 적용", "Aplicar selección", "Appliquer la sélection", "Auswahl anwenden", "Применить выбор") \
+    X(NoMaterial, "(マテリアルなし)", "(no material)", "(无材质)", "(머티리얼 없음)", "(sin material)", "(sans matériau)", "(kein Material)", "(без материала)") \
+    X(HintParts, "チェックしたメッシュとマテリアルの両方に当てはまるパーツだけをベイクします。変更したら「選択を適用」を押してください。OBJ はマテリアルを読み込まないため、メッシュ (o / g) の選択のみです。", "Only parts that match both a checked mesh and a checked material are baked. Press \"Apply selection\" after changing them. OBJ materials are not loaded, so OBJ files only offer mesh (o / g) selection.", "仅烘焙同时属于已勾选网格和已勾选材质的部分。更改后请点击“应用选择”。OBJ 不读取材质，因此只能选择网格 (o / g)。", "체크한 메시와 머티리얼에 모두 해당하는 파트만 베이크합니다. 변경한 뒤 \"선택 적용\"을 누르세요. OBJ는 머티리얼을 읽지 않으므로 메시(o / g)만 선택할 수 있습니다.", "Solo se hornean las partes que pertenecen a una malla y a un material marcados. Pulsa «Aplicar selección» tras cambiarlos. OBJ no carga materiales, así que solo permite elegir mallas (o / g).", "Seules les parties appartenant à la fois à un maillage et à un matériau cochés sont bakées. Cliquez sur « Appliquer la sélection » après modification. Les matériaux OBJ ne sont pas chargés : seuls les maillages (o / g) sont sélectionnables.", "Es werden nur Teile gebacken, die zu einem markierten Mesh und einem markierten Material gehören. Nach Änderungen auf „Auswahl anwenden“ klicken. OBJ-Materialien werden nicht geladen, daher ist bei OBJ nur die Mesh-Auswahl (o / g) möglich.", "Запекаются только части, принадлежащие и отмеченному мешу, и отмеченному материалу. После изменений нажмите «Применить выбор». Материалы OBJ не загружаются, поэтому для OBJ доступен выбор только мешей (o / g).") \
+    X(ErrSelEmpty, "ベイク対象のパーツがありません。メッシュとマテリアルを選んでください", "No parts are selected. Choose at least one mesh and one material.", "没有可烘焙的部分。请选择网格和材质。", "베이크할 파트가 없습니다. 메시와 머티리얼을 선택하세요.", "No hay partes seleccionadas. Elige al menos una malla y un material.", "Aucune partie sélectionnée. Choisissez au moins un maillage et un matériau.", "Keine Teile ausgewählt. Wähle mindestens ein Mesh und ein Material.", "Не выбрано ни одной части. Выберите хотя бы один меш и один материал.") \
+    X(ErrSelNoUv, "選んだパーツに、選択したUVチャンネルを持つものがありません", "None of the selected parts has the chosen UV channel.", "所选部分都没有所选的 UV 通道。", "선택한 파트 중에 선택한 UV 채널을 가진 것이 없습니다.", "Ninguna de las partes seleccionadas tiene el canal UV elegido.", "Aucune des parties sélectionnées n’a le canal UV choisi.", "Keines der ausgewählten Teile hat den gewählten UV-Kanal.", "Ни у одной из выбранных частей нет выбранного UV-канала.") \
     X(StNoModel, "モデル未読み込み", "No model loaded", "未加载模型", "불러온 모델 없음", "Ningún modelo cargado", "Aucun modèle chargé", "Kein Modell geladen", "Модель не загружена") \
     X(StLoading, "読み込み中...", "Loading...", "正在加载...", "불러오는 중...", "Cargando...", "Chargement...", "Wird geladen...", "Загрузка...") \
     X(StLoaded, "読み込み完了: 頂点 %zu / 三角形 %zu / 半径 %.4g", "Loaded: %zu vertices / %zu triangles / radius %.4g", "加载完成：顶点 %zu / 三角形 %zu / 半径 %.4g", "불러오기 완료: 정점 %zu / 삼각형 %zu / 반지름 %.4g", "Cargado: %zu vértices / %zu triángulos / radio %.4g", "Chargé : %zu sommets / %zu triangles / rayon %.4g", "Geladen: %zu Vertices / %zu Dreiecke / Radius %.4g", "Загружено: вершин %zu / треугольников %zu / радиус %.4g") \
@@ -109,29 +120,29 @@ constexpr int kLangCount = static_cast<int>( Lang::Count );
 // clang-format on
 
 #define I18N_DECLARE_ID(id, ja, en, zh, ko, es, fr, de, ru) id,
-enum class Str : int { I18N_STRINGS( I18N_DECLARE_ID ) Count };
+enum class Str : int { I18N_STRINGS(I18N_DECLARE_ID) Count };
 #undef I18N_DECLARE_ID
 
 // 現在の言語 (スレッドセーフ)。初回は OS の表示言語に合わせ、対応していない言語なら En。
 Lang GetLang();
-void SetLang( Lang lang );
+void SetLang(Lang lang);
 
 // 言語名 (その言語自身の表記。言語メニュー用)
-const char* LangNativeName( Lang lang );
+const char* LangNativeName(Lang lang);
 
 // 現在の言語の文字列 (UTF-8)。ワーカースレッドからも呼べる。
-const char* Tr( Str id );
-const char* Tr( Lang lang, Str id );
+const char* Tr(Str id);
+const char* Tr(Lang lang, Str id);
 
 // ステータス表示用のメッセージ。言語を切り替えたときに表示も追従するよう、文字列ではなく ID + 引数で持つ。
 struct StatusMsg {
     Str         id = Str::Empty;
     std::string detail; // ID の文言の後ろに付ける詳細 (エラー本文・パスなど)
     // id == Str::StLoaded のときだけ使う
-    size_t verts = 0;
-    size_t tris = 0;
+    size_t verts  = 0;
+    size_t tris   = 0;
     double radius = 0.0;
 };
 
 // 現在の言語で表示用の文字列にする。
-std::string FormatStatus( const StatusMsg& m );
+std::string FormatStatus(const StatusMsg& m);

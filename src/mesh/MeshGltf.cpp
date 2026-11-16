@@ -30,9 +30,16 @@ std::string ErrorText(fastgltf::Error e) {
     return std::string(fastgltf::getErrorName(e)) + ": " + std::string(fastgltf::getErrorMessage(e));
 }
 
-// 1つのプリミティブを三角形リストへ変換し out へ追加する。UV が無い/三角形でない場合は何もしない。
+template <class S>
+std::string ToStd(const S& s) {
+    return std::string(s.begin(), s.end());
+}
+
+// 1つのプリミティブを三角形リストへ変換し scene へパーツとして追加する。UV が無い/三角形でない場合は何もしない。
+// meshId はこのメッシュ(ノード)の番号で、最初にパーツを追加できたときに meshName で登録する (負なら未登録)。
 // 戻り値: 追加した場合 true。UV が無かった場合 missingUv を立てる。
-bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& prim, const Affine& xf, Mesh& out, bool& missingUv) {
+bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& prim, const Affine& xf, ModelScene& scene, int& meshId,
+                     const std::string& meshName, bool& missingUv) {
     using fastgltf::AccessorType;
     using fastgltf::PrimitiveType;
     if (prim.type != PrimitiveType::Triangles && prim.type != PrimitiveType::TriangleStrip && prim.type != PrimitiveType::TriangleFan) return false;
@@ -45,22 +52,32 @@ bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& pr
     };
     const fastgltf::Accessor* accPos = find("POSITION");
     const fastgltf::Accessor* accNrm = find("NORMAL");
-    const fastgltf::Accessor* accUv  = find("TEXCOORD_0");
     if (!accPos || accPos->type != AccessorType::Vec3 || (!accPos->bufferViewIndex && !accPos->sparse)) return false;
-    if (!accUv || accUv->type != AccessorType::Vec2 || (!accUv->bufferViewIndex && !accUv->sparse)) {
+
+    // UV: TEXCOORD_0, 1, ... を順に集める。TEXCOORD_0 は必須。2番目以降で読めないものは空のチャンネルにする。
+    std::vector<const fastgltf::Accessor*> accUvs;
+    for (int c = 0; c < kMaxUvChannels; ++c) {
+        const std::string          name = "TEXCOORD_" + std::to_string(c);
+        const fastgltf::Accessor* a    = find(name.c_str());
+        if (!a) break;
+        const bool ok = a->type == AccessorType::Vec2 && (a->bufferViewIndex || a->sparse);
+        accUvs.push_back(ok ? a : nullptr);
+    }
+    if (accUvs.empty() || !accUvs[0]) {
         missingUv = true;
         return false;
     }
-    if (accUv->count != accPos->count) return false;
+    if (accUvs[0]->count != accPos->count) return false;
+    for (auto& a : accUvs) {
+        if (a && a->count != accPos->count) a = nullptr;
+    }
     const bool hasNormal = accNrm && accNrm->type == AccessorType::Vec3 && accNrm->count == accPos->count && (accNrm->bufferViewIndex || accNrm->sparse);
 
     const size_t n = accPos->count;
     if (n == 0) return false;
 
     std::vector<GltfV3> pos(n), nrm;
-    std::vector<GltfV2> uv(n);
     fastgltf::iterateAccessorWithIndex<GltfV3>(asset, *accPos, [&](GltfV3 v, size_t i) { pos[i] = v; });
-    fastgltf::iterateAccessorWithIndex<GltfV2>(asset, *accUv, [&](GltfV2 v, size_t i) { uv[i] = v; });
     if (hasNormal) {
         nrm.resize(n);
         fastgltf::iterateAccessorWithIndex<GltfV3>(asset, *accNrm, [&](GltfV3 v, size_t i) { nrm[i] = v; });
@@ -103,23 +120,37 @@ bool AppendPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& pr
     }
     if (tris.empty()) return false;
 
-    // ワールド(ノード変換後)の頂点へ。glTF の v は下向き(左上原点)なので、本ツールの v 上向きに合わせて反転する。
-    Mesh part;
-    part.vertices.resize(n);
+    // ワールド(ノード変換後)の頂点へ。UV はチャンネルごとに別の配列へ入れる。
+    // glTF の v は下向き(左上原点)なので、本ツールの v 上向きに合わせて反転する。
+    MeshPart part;
+    part.materialIndex = prim.materialIndex ? static_cast<int>(*prim.materialIndex) : -1;
+    part.geo.vertices.resize(n);
     for (size_t i = 0; i < n; ++i) {
         const double p[3]  = {pos[i].x, pos[i].y, pos[i].z};
         const double nn[3] = {hasNormal ? nrm[i].x : 0.0, hasNormal ? nrm[i].y : 0.0, hasNormal ? nrm[i].z : 0.0};
-        part.vertices[i]   = MakeWorldVertex(xf, p, hasNormal ? nn : nullptr, uv[i].x, 1.0f - uv[i].y);
+        part.geo.vertices[i] = MakeWorldVertex(xf, p, hasNormal ? nn : nullptr, 0.0f, 0.0f);
     }
-    part.indices = std::move(tris);
-    AppendPart(out, std::move(part), xf.Mirrored(), hasNormal); // 鏡像なら巻き順反転 / 法線が無ければ生成 / out へ結合
+    part.uvs.resize(accUvs.size());
+    for (size_t c = 0; c < accUvs.size(); ++c) {
+        if (!accUvs[c]) continue;
+        part.uvs[c].resize(n);
+        fastgltf::iterateAccessorWithIndex<GltfV2>(asset, *accUvs[c], [&](GltfV2 v, size_t i) { part.uvs[c][i] = {v.x, 1.0f - v.y}; });
+    }
+    part.geo.indices = std::move(tris);
+
+    if (meshId < 0) {
+        meshId = static_cast<int>(scene.meshNames.size());
+        scene.meshNames.push_back(meshName);
+    }
+    part.meshIndex = meshId;
+    AddPart(scene, std::move(part), xf.Mirrored(), hasNormal); // 鏡像なら巻き順反転 / 法線が無ければ生成 / scene へ追加
     return true;
 }
 
 } // namespace
 
-bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) {
-    out = Mesh{};
+bool LoadGltf(const std::filesystem::path& path, ModelScene& out, std::string& error) {
+    out = ModelScene{};
 
     if (!CheckInputFile(path, error)) return false;
 
@@ -138,15 +169,21 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
     }
     fastgltf::Asset& a = asset.get();
 
+    out.materialNames.reserve(a.materials.size());
+    for (const auto& m : a.materials) out.materialNames.push_back(ToStd(m.name));
+
+    // メッシュ = シーンの中でメッシュを持つノード1つ (同じメッシュを複数のノードが使えば、別のメッシュとして並ぶ)
     bool missingUv = false;
-    auto addMesh   = [&](size_t meshIndex, const Affine& xf) {
+    auto addMesh   = [&](size_t meshIndex, const Affine& xf, const std::string& nodeName) {
         if (meshIndex >= a.meshes.size()) return;
-        for (const auto& prim : a.meshes[meshIndex].primitives) AppendPrimitive(a, prim, xf, out, missingUv);
+        const std::string name   = nodeName.empty() ? ToStd(a.meshes[meshIndex].name) : nodeName;
+        int               meshId = -1;
+        for (const auto& prim : a.meshes[meshIndex].primitives) AppendPrimitive(a, prim, xf, out, meshId, name, missingUv);
     };
 
     if (a.scenes.empty()) {
         // シーン定義が無い場合は全メッシュを恒等変換で読む
-        for (size_t i = 0; i < a.meshes.size(); ++i) addMesh(i, Affine{});
+        for (size_t i = 0; i < a.meshes.size(); ++i) addMesh(i, Affine{}, std::string());
     } else {
         const size_t sceneIndex = a.defaultScene.value_or(0);
         fastgltf::iterateSceneNodes(a, sceneIndex < a.scenes.size() ? sceneIndex : 0, fastgltf::math::nmat4x4(),
@@ -159,9 +196,9 @@ bool LoadGltf(const std::filesystem::path& path, Mesh& out, std::string& error) 
                                         Affine xf;
                                         for (int col = 0; col < 4; ++col)
                                             for (int row = 0; row < 3; ++row) xf.c[col][row] = f[col * 4 + row];
-                                        addMesh(*node.meshIndex, xf);
+                                        addMesh(*node.meshIndex, xf, ToStd(node.name));
                                     });
     }
 
-    return FinalizeMesh(out, error, missingUv, Tr(Str::ErrGltfNoUv));
+    return FinalizeScene(out, error, missingUv, Tr(Str::ErrGltfNoUv));
 }
