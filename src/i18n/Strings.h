@@ -8,7 +8,7 @@
 // printf の指定子 (%u %zu %s など) は、全言語で同じ順序で並べること。
 
 enum class Lang { Ja, En, Zh, Ko, Es, Fr, De, Ru, Count };
-constexpr int kLangCount = static_cast<int>(Lang::Count);
+constexpr int kLangCount = static_cast<int>( Lang::Count );
 
 // clang-format off
 #define I18N_STRINGS(X) \
@@ -51,6 +51,11 @@ constexpr int kLangCount = static_cast<int>(Lang::Count);
     X(Lighting, "ライティング", "Lighting", "光照", "조명", "Iluminación", "Éclairage", "Beleuchtung", "Освещение") \
     X(ResetCamera, "カメラをリセット", "Reset camera", "重置相机", "카메라 초기화", "Restablecer cámara", "Réinitialiser la caméra", "Kamera zurücksetzen", "Сбросить камеру") \
     X(CameraHelp, "左ドラッグ: 回転 / 右・中ドラッグ: 移動 / ホイール: ズーム", "Left-drag: rotate / Right- or middle-drag: pan / Wheel: zoom", "左键拖动：旋转 / 右键或中键拖动：平移 / 滚轮：缩放", "왼쪽 드래그: 회전 / 오른쪽·가운데 드래그: 이동 / 휠: 확대·축소", "Arrastre izquierdo: rotar / Arrastre derecho o central: desplazar / Rueda: zoom", "Glisser gauche : rotation / Glisser droit ou central : déplacement / Molette : zoom", "Links ziehen: drehen / Rechts oder Mitte ziehen: verschieben / Mausrad: zoomen", "ЛКМ: вращение / ПКМ или СКМ: перемещение / Колесо: масштаб") \
+    X(ResetView, "表示をリセット", "Reset view", "重置视图", "보기 초기화", "Restablecer vista", "Réinitialiser la vue", "Ansicht zurücksetzen", "Сбросить вид") \
+    X(TextureHelp, "ホイール: ズーム / ドラッグ: 移動 / ダブルクリック: リセット", "Wheel: zoom / Drag: pan / Double-click: reset", "滚轮：缩放 / 拖动：平移 / 双击：重置", "휠: 확대/축소 / 드래그: 이동 / 더블클릭: 초기화", "Rueda: zoom / Arrastrar: desplazar / Doble clic: restablecer", "Molette : zoom / Glisser : déplacer / Double-clic : réinitialiser", "Mausrad: Zoom / Ziehen: Verschieben / Doppelklick: Zurücksetzen", "Колесо: масштаб / Перетаскивание: сдвиг / Двойной щелчок: сброс") \
+    X(LabelPixel, "ピクセル", "Pixel", "像素", "픽셀", "Píxel", "Pixel", "Pixel", "Пиксель") \
+    X(LabelValue, "表示値", "Display value", "显示值", "표시 값", "Valor mostrado", "Valeur affichée", "Anzeigewert", "Значение") \
+    X(LabelCurvature, "曲率", "Curvature", "曲率", "곡률", "Curvatura", "Courbure", "Krümmung", "Кривизна") \
     X(StNoModel, "モデル未読み込み", "No model loaded", "未加载模型", "불러온 모델 없음", "Ningún modelo cargado", "Aucun modèle chargé", "Kein Modell geladen", "Модель не загружена") \
     X(StLoading, "読み込み中...", "Loading...", "正在加载...", "불러오는 중...", "Cargando...", "Chargement...", "Wird geladen...", "Загрузка...") \
     X(StLoaded, "読み込み完了: 頂点 %zu / 三角形 %zu / 半径 %.4g", "Loaded: %zu vertices / %zu triangles / radius %.4g", "加载完成：顶点 %zu / 三角形 %zu / 半径 %.4g", "불러오기 완료: 정점 %zu / 삼각형 %zu / 반지름 %.4g", "Cargado: %zu vértices / %zu triángulos / radio %.4g", "Chargé : %zu sommets / %zu triangles / rayon %.4g", "Geladen: %zu Vertices / %zu Dreiecke / Radius %.4g", "Загружено: вершин %zu / треугольников %zu / радиус %.4g") \
@@ -104,29 +109,29 @@ constexpr int kLangCount = static_cast<int>(Lang::Count);
 // clang-format on
 
 #define I18N_DECLARE_ID(id, ja, en, zh, ko, es, fr, de, ru) id,
-enum class Str : int { I18N_STRINGS(I18N_DECLARE_ID) Count };
+enum class Str : int { I18N_STRINGS( I18N_DECLARE_ID ) Count };
 #undef I18N_DECLARE_ID
 
 // 現在の言語 (スレッドセーフ)。初回は OS の表示言語に合わせ、対応していない言語なら En。
 Lang GetLang();
-void SetLang(Lang lang);
+void SetLang( Lang lang );
 
 // 言語名 (その言語自身の表記。言語メニュー用)
-const char* LangNativeName(Lang lang);
+const char* LangNativeName( Lang lang );
 
 // 現在の言語の文字列 (UTF-8)。ワーカースレッドからも呼べる。
-const char* Tr(Str id);
-const char* Tr(Lang lang, Str id);
+const char* Tr( Str id );
+const char* Tr( Lang lang, Str id );
 
 // ステータス表示用のメッセージ。言語を切り替えたときに表示も追従するよう、文字列ではなく ID + 引数で持つ。
 struct StatusMsg {
     Str         id = Str::Empty;
     std::string detail; // ID の文言の後ろに付ける詳細 (エラー本文・パスなど)
     // id == Str::StLoaded のときだけ使う
-    size_t verts  = 0;
-    size_t tris   = 0;
+    size_t verts = 0;
+    size_t tris = 0;
     double radius = 0.0;
 };
 
 // 現在の言語で表示用の文字列にする。
-std::string FormatStatus(const StatusMsg& m);
+std::string FormatStatus( const StatusMsg& m );
