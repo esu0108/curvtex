@@ -95,8 +95,18 @@ LRESULT Window::OnMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;
     switch (msg) {
     case WM_SIZE:
-        if (cb_.onResize && wParam != SIZE_MINIMIZED) cb_.onResize(LOWORD(lParam), HIWORD(lParam));
+        if (wParam != SIZE_MINIMIZED) {
+            if (cb_.onResize) cb_.onResize(LOWORD(lParam), HIWORD(lParam));
+            // サイズ変更中も描き続ける (描かないと、直前の絵が引き伸ばされたまま止まる)
+            if (sizing_ && cb_.onSizingFrame) cb_.onSizingFrame();
+        }
         return 0;
+    case WM_ENTERSIZEMOVE:
+        sizing_ = true;
+        break;
+    case WM_EXITSIZEMOVE:
+        sizing_ = false;
+        break;
     case WM_DPICHANGED: {
         // 別 DPI のモニタへ移動 / 表示倍率の変更。アプリへ倍率を通知し、OS 提案の矩形へ移す。
         if (cb_.onDpiChanged) cb_.onDpiChanged(static_cast<float>(LOWORD(wParam)) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));

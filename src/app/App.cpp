@@ -167,6 +167,9 @@ int App::Run(int nShow) {
     cb.onDpiChanged = [this](float scale) {
         if (imguiReady_) ApplyDpiScale(scale);
     };
+    cb.onSizingFrame = [this]() {
+        if (imguiReady_ && !window_.IsMinimized()) RenderUiFrame(); // 枠をドラッグしている間は、OS のループの中から描く
+    };
     cb.onDropFile = [this](std::wstring path) {
         pendingDrop_    = fs::path(std::move(path));
         hasPendingDrop_ = true;
@@ -205,21 +208,7 @@ int App::Run(int nShow) {
         }
         --redraw_;
 
-        ImGui_ImplDX12_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-
-        Actions act;
-        ImGui::PushFont(FontFor(GetLang()), 0.0f); // 0.0f = サイズはそのまま
-        DrawUI(state_, bake_, view_, act);
-        ImGui::PopFont();
-        ImGui::Render();
-
-        HandleDrop();
-        const bool saveNow = HandleActions(act); // UI からの要求を処理 (GPU がアイドルのこのタイミングで実行)
-        RenderFrame();
-        UpdateTexturePixels();
-        StartSaveIfRequested(saveNow); // 保存 (フレーム完了後)
+        RenderUiFrame();
     }
 
     // 終了時: 保存中ならファイルが途中で切れないよう完了を待つ
@@ -229,6 +218,31 @@ int App::Run(int nShow) {
     renderer_.Shutdown();
     window_.Destroy();
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// 1フレーム (メインループと、サイズ変更中の WM_SIZE から呼ぶ)
+// ---------------------------------------------------------------------------
+void App::RenderUiFrame() {
+    if (inFrame_) return;
+    inFrame_ = true;
+    struct Reset { bool& f; ~Reset() { f = false; } } reset{inFrame_};
+
+    ImGui_ImplDX12_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    Actions act;
+    ImGui::PushFont(FontFor(GetLang()), 0.0f); // 0.0f = サイズはそのまま
+    DrawUI(state_, bake_, view_, act);
+    ImGui::PopFont();
+    ImGui::Render();
+
+    HandleDrop();
+    const bool saveNow = HandleActions(act); // UI からの要求を処理 (GPU がアイドルのこのタイミングで実行)
+    RenderFrame();
+    UpdateTexturePixels();
+    StartSaveIfRequested(saveNow); // 保存 (フレーム完了後)
 }
 
 // ---------------------------------------------------------------------------

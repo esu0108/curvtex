@@ -11,6 +11,9 @@ public:
         std::function<void(UINT width, UINT height)> onResize;      // クライアント領域のサイズ変更(最小化は通知しない)
         std::function<void(float scale)>             onDpiChanged;  // DPI 倍率(96DPI=1.0)の変更
         std::function<void(std::wstring path)>       onDropFile;    // ファイルのドロップ(複数なら先頭の1つ)
+        // 枠をドラッグしてサイズを変えている最中に、サイズが変わるたび(onResize の直後)に呼ぶ。
+        // サイズ変更中は OS のループがメッセージを処理し続け、アプリのメインループが回らないので、ここで1フレーム描く。
+        std::function<void()>                        onSizingFrame;
     };
 
     ~Window();
@@ -38,4 +41,5 @@ private:
     HINSTANCE    hInst_ = nullptr;
     std::wstring className_;
     Callbacks    cb_;
+    bool         sizing_ = false; // 枠のドラッグによるサイズ変更 (移動も含む) の最中
 };

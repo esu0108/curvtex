@@ -53,6 +53,7 @@ private:
     bool PollJobs(); // 状態が変わったら true
     void HandleDrop();
     bool HandleActions(const Actions& act); // 保存先が決まって保存を始めるべきなら true
+    void RenderUiFrame(); // UI の構築 → 要求の処理 → 描画 → 保存の開始、までの1フレーム
     void RenderFrame();
     void StartSaveIfRequested(bool requested);
     void UpdateTexturePixels(); // テクスチャタブのピクセル値表示用に、結果テクスチャを CPU へ読み戻す
@@ -80,6 +81,7 @@ private:
     // (ImGui は入力の反映に数フレームかかるので、入力後は少し多めに描く)
     static constexpr int kRedrawFrames = 3;
     int                  redraw_       = kRedrawFrames;
+    bool                 inFrame_      = false; // RenderUiFrame の最中 (サイズ変更中の WM_SIZE からの入れ子を防ぐ)
     bool                 JobsRunning() const { return state_.loading || state_.saving; }
 
     std::filesystem::path pendingDrop_; // ドロップされたファイル (次のフレームで処理)
