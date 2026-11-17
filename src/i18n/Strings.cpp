@@ -12,22 +12,32 @@ struct Entry {
     const char* t[kLangCount];
 };
 
-#define I18N_DECLARE_ENTRY(id, ja, en, zh, ko, es, fr, de, ru) {{ja, en, zh, ko, es, fr, de, ru}},
+#define I18N_DECLARE_ENTRY(id, ja, en, zh, ko, es, fr, de, ru, zht, th, idn, pt, it, vi, tr) {{ja, en, zh, ko, es, fr, de, ru, zht, th, idn, pt, it, vi, tr}},
 constexpr Entry kTable[] = {I18N_STRINGS(I18N_DECLARE_ENTRY)};
 #undef I18N_DECLARE_ENTRY
 static_assert(sizeof(kTable) / sizeof(kTable[0]) == static_cast<size_t>(Str::Count), "string table size mismatch");
 
-constexpr const char* kLangNames[kLangCount] = {"日本語", "English", "简体中文", "한국어", "Español", "Français", "Deutsch", "Русский"};
+constexpr const char* kLangNames[kLangCount] = {"日本語", "English", "简体中文", "한국어", "Español", "Français", "Deutsch", "Русский", "繁體中文", "ไทย", "Bahasa Indonesia", "Português (Brasil)", "Italiano", "Tiếng Việt", "Türkçe"};
 
 Lang DetectSystemLang() {
-    switch (PRIMARYLANGID(GetUserDefaultUILanguage())) {
+    const LANGID lid = GetUserDefaultUILanguage();
+    switch (PRIMARYLANGID(lid)) {
     case LANG_JAPANESE: return Lang::Ja;
-    case LANG_CHINESE: return Lang::Zh;
+    case LANG_CHINESE:
+        // 繁体字: 台湾・香港・マカオ、および中立の zh-Hant (0x7C04)。それ以外 (zh-CN, シンガポール, 中立の zh-Hans) は簡体字。
+        if (lid == 0x7C04 || SUBLANGID(lid) == SUBLANG_CHINESE_TRADITIONAL || SUBLANGID(lid) == SUBLANG_CHINESE_HONGKONG || SUBLANGID(lid) == SUBLANG_CHINESE_MACAU) return Lang::ZhHant;
+        return Lang::Zh;
     case LANG_KOREAN: return Lang::Ko;
     case LANG_SPANISH: return Lang::Es;
     case LANG_FRENCH: return Lang::Fr;
     case LANG_GERMAN: return Lang::De;
     case LANG_RUSSIAN: return Lang::Ru;
+    case LANG_THAI: return Lang::Th;
+    case LANG_INDONESIAN: return Lang::Id;
+    case LANG_PORTUGUESE: return Lang::Pt;
+    case LANG_ITALIAN: return Lang::It;
+    case LANG_VIETNAMESE: return Lang::Vi;
+    case LANG_TURKISH: return Lang::Tr;
     default: return Lang::En;
     }
 }

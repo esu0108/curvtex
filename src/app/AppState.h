@@ -13,6 +13,7 @@ struct TexViewState {
     float zoom = 1.0f;              // 1.0 = 表示領域にフィット
     float offX = 0.0f, offY = 0.0f; // 表示領域の中心から見たテクスチャ中心のずれ (画面px)
     int   texW = 0, texH = 0;       // 前回表示したテクスチャのサイズ (変わったらリセットする)
+    bool  linear = true;            // true: 線形補間 / false: 最近傍 (Reset では変えない)
     void  Reset() { zoom = 1.0f; offX = offY = 0.0f; }
 };
 

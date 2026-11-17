@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "i18n/Strings.h"
+#include "gpu/UiPointSampler.h"
 #include "imgui.h"
 
 namespace {
@@ -255,6 +256,8 @@ void DrawTexture(AppState& s, const BakePass& bake) {
 
     if (ImGui::Button(Tr(Str::ResetView))) v.Reset();
     ImGui::SameLine();
+    ImGui::Checkbox(Tr(Str::TexLinear), &v.linear);
+    ImGui::SameLine();
     TextDisabledWrapped(Tr(Str::TextureHelp));
 
     const ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -305,7 +308,11 @@ void DrawTexture(AppState& s, const BakePass& bake) {
     if (q0.x < q1.x && q0.y < q1.y) {
         const ImVec2 uv0((q0.x - p0.x) / (p1.x - p0.x), (q0.y - p0.y) / (p1.y - p0.y));
         const ImVec2 uv1((q1.x - p0.x) / (p1.x - p0.x), (q1.y - p0.y) / (p1.y - p0.y));
+        // 補間なしのときは、この画像だけ点サンプラー版のパイプラインに切り替えて描く (作れていなければ線形補間のまま)
+        const bool point = !v.linear && UiPointSampler::Instance().Ready();
+        if (point) dl->AddCallback(UiPointSampler::Begin, nullptr);
         dl->AddImage(static_cast<ImTextureID>(bake.ResultSrv().ptr), q0, q1, uv0, uv1);
+        if (point) dl->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
     }
 
     // 十分に拡大したらテクセルの境界線を重ねる

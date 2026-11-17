@@ -96,4 +96,7 @@ private:
     ImFont*                                 fontJa_ = nullptr;
     ImFont*                                 fontZh_ = nullptr;
     ImFont*                                 fontKo_ = nullptr;
+    ImFont*                                 fontZhHant_ = nullptr;
+    ImFont*                                 fontTh_ = nullptr;
+    ImFont*                                 fontLatin_ = nullptr;
 };

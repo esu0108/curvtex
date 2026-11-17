@@ -124,6 +124,8 @@ add_shader(view_vs  view.hlsl  VSMain vs_5_0 g_ViewVS)
 add_shader(view_ps  view.hlsl  PSMain ps_5_0 g_ViewPS)
 add_shader(mip_vs   mip.hlsl   VSMain vs_5_0 g_MipVS)
 add_shader(mip_ps   mip.hlsl   PSMain ps_5_0 g_MipPS)
+add_shader(ui_vs    ui_point.hlsl VSMain vs_5_0 g_UiVS)
+add_shader(ui_ps    ui_point.hlsl PSMain ps_5_0 g_UiPS)
 
 # ---- Application ------------------------------------------------------------
 find_package(Threads REQUIRED) # rapidobj は std::thread を使用
@@ -165,6 +167,8 @@ add_executable(curvtex WIN32
   src/gpu/BakePass.h
   src/gpu/ViewPass.cpp
   src/gpu/ViewPass.h
+  src/gpu/UiPointSampler.cpp
+  src/gpu/UiPointSampler.h
   # モデル読み込み
   src/mesh/Mesh.cpp
   src/mesh/Mesh.h
@@ -189,11 +193,12 @@ add_executable(curvtex WIN32
   shaders/jfa.hlsl
   shaders/view.hlsl
   shaders/mip.hlsl
+  shaders/ui_point.hlsl
   ${SHADER_HEADERS}
 )
 
 # .hlsl は VS では自動コンパイルさせない (上の fxc ルールで処理する)
-set_source_files_properties(shaders/curvature.hlsl shaders/raster.hlsl shaders/shade.hlsl shaders/jfa.hlsl shaders/view.hlsl shaders/mip.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
+set_source_files_properties(shaders/curvature.hlsl shaders/raster.hlsl shaders/shade.hlsl shaders/jfa.hlsl shaders/view.hlsl shaders/mip.hlsl shaders/ui_point.hlsl PROPERTIES VS_TOOL_OVERRIDE "None")
 
 target_include_directories(curvtex PRIVATE
   ${rapidobj_SOURCE_DIR}/include

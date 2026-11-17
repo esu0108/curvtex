@@ -1,4 +1,5 @@
 #include "app/App.h"
+#include "gpu/UiPointSampler.h"
 
 #include <algorithm>
 #include <chrono>
@@ -67,23 +68,32 @@ void App::InitImGui() {
     ii.SrvDescriptorFreeFn  = SrvFree;
     ii.UserData             = &renderer_;
     ImGui_ImplDX12_Init(&ii);
+    try { // テクスチャを最近傍で描くための ImGui 用パイプライン。作れなければ、補間なしの表示だけ使えない (線形補間のまま描く)
+        UiPointSampler::Instance().Init(renderer_.Device(), Renderer::kBackFormat);
+    } catch (const std::exception&) {
+        UiPointSampler::Instance().Shutdown();
+    }
 }
 
 // 1.92 以降は動的グリフ読み込みなので、グリフの範囲指定は不要。
 void App::InitFonts() {
     ImGuiIO& io = ImGui::GetIO();
 
-    enum Script { kJa, kZh, kKo, kScriptCount };
-    // 各文字種の候補 (先に見つかったものを使う)
+    enum Script { kJa, kZh, kZhHant, kKo, kThai, kLatin, kScriptCount };
+    // 各文字種の候補 (先に見つかったものを使う)。無い文字種は読み飛ばす。
     const std::vector<const char*> candidates[kScriptCount] = {
         {"C:\\Windows\\Fonts\\meiryo.ttc", "C:\\Windows\\Fonts\\YuGothR.ttc", "C:\\Windows\\Fonts\\msgothic.ttc"},
         {"C:\\Windows\\Fonts\\msyh.ttc", "C:\\Windows\\Fonts\\simsun.ttc"},
+        {"C:\\Windows\\Fonts\\msjh.ttc", "C:\\Windows\\Fonts\\mingliu.ttc"},
         {"C:\\Windows\\Fonts\\malgun.ttf", "C:\\Windows\\Fonts\\gulim.ttc"},
+        {"C:\\Windows\\Fonts\\LeelawUI.ttf", "C:\\Windows\\Fonts\\Leelawad.ttf", "C:\\Windows\\Fonts\\tahoma.ttf"}, // タイ語
+        {"C:\\Windows\\Fonts\\segoeui.ttf", "C:\\Windows\\Fonts\\arial.ttf"}, // ベトナム語・トルコ語などの拡張ラテン文字
     };
 
     fontFiles_.clear();
     fontFiles_.reserve(kScriptCount);
-    int fileIndex[kScriptCount] = {-1, -1, -1};
+    int fileIndex[kScriptCount];
+    for (int& i : fileIndex) i = -1;
     for (int sc = 0; sc < kScriptCount; ++sc) {
         for (const char* path : candidates[sc]) {
             std::ifstream ifs(fs::path(path), std::ios::binary | std::ios::ate);
@@ -100,6 +110,7 @@ void App::InitFonts() {
     }
 
     // order の先頭を主フォントにし、残りを不足グリフの補完として結合する。
+    // どの言語の組でも全文字種を含めておく (言語メニューの各言語名と、モデル内の名前を、どの言語で動いていても表示できるように)。
     auto addSet = [&](std::initializer_list<int> order) -> ImFont* {
         ImFont* primary = nullptr;
         for (int sc : order) {
@@ -113,20 +124,31 @@ void App::InitFonts() {
         }
         return primary ? primary : io.Fonts->AddFontDefault(); // 日本語フォントが全く無い環境でも、英語などは表示できる
     };
-    fontJa_ = addSet({kJa, kZh, kKo});
-    fontZh_ = addSet({kZh, kJa, kKo});
-    fontKo_ = addSet({kKo, kJa, kZh});
+    fontJa_     = addSet({kJa, kLatin, kThai, kZh, kZhHant, kKo});
+    fontZh_     = addSet({kZh, kLatin, kThai, kJa, kZhHant, kKo});
+    fontZhHant_ = addSet({kZhHant, kLatin, kThai, kZh, kJa, kKo});
+    fontKo_     = addSet({kKo, kLatin, kThai, kJa, kZh, kZhHant});
+    fontTh_     = addSet({kThai, kLatin, kJa, kZh, kZhHant, kKo});
+    fontLatin_  = addSet({kLatin, kThai, kJa, kZh, kZhHant, kKo});
 }
 
 ImFont* App::FontFor(Lang lang) const {
     switch (lang) {
     case Lang::Zh: return fontZh_;
+    case Lang::ZhHant: return fontZhHant_;
     case Lang::Ko: return fontKo_;
+    case Lang::Th: return fontTh_;
+    case Lang::Id:
+    case Lang::Pt:
+    case Lang::It:
+    case Lang::Vi:
+    case Lang::Tr: return fontLatin_; // 拡張ラテン文字 (ベトナム語の声調記号など) を含むフォントを先頭にする
     default: return fontJa_; // 日本語・英語・欧州言語 (ラテン文字・キリル文字は日本語フォントにある)
     }
 }
 
 void App::ShutdownImGui() {
+    UiPointSampler::Instance().Shutdown();
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
@@ -397,6 +419,7 @@ void App::RenderFrame() {
         view_.Record(gpuMesh_, bake_, mvp, view, state_.lit);
     }
     renderer_.BeginBackbuffer(0.10f, 0.10f, 0.12f);
+    UiPointSampler::Instance().BeginFrame(renderer_.CommandList(), ImGui::GetDrawData());
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), renderer_.CommandList());
     renderer_.EndFrame();
 }
