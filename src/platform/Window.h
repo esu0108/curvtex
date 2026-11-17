@@ -32,6 +32,7 @@ public:
 
     HWND Handle() const { return hwnd_; }
     bool IsMinimized() const { return IsIconic(hwnd_) != FALSE; }
+    bool IsSizing() const { return sizing_; } // 枠のドラッグでサイズ変更中か
 
 private:
     static LRESULT CALLBACK Proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

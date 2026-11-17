@@ -233,9 +233,22 @@ void DrawView3D(AppState& s, const ViewPass& view) {
     s.viewReqW = static_cast<int>(avail.x);
     s.viewReqH = static_cast<int>(avail.y);
 
+    // 描画先のサイズが表示領域とずれているとき (ウィンドウの枠をドラッグしてサイズを変えている間は、描画先を作り直さない)
+    // は、縦横比を保って領域の中央に収める。普段はぴったり同じなので、領域いっぱいに表示する。
+    ImVec2       imgSize = avail;
+    ImVec2       imgPos(0.0f, 0.0f);
+    const float  tw      = static_cast<float>(view.Width());
+    const float  th      = static_cast<float>(view.Height());
+    if (tw > 0.0f && th > 0.0f && (std::fabs(avail.x - tw) >= 2.0f || std::fabs(avail.y - th) >= 2.0f)) {
+        const float fit = std::min(avail.x / tw, avail.y / th);
+        imgSize         = ImVec2(tw * fit, th * fit);
+        imgPos          = ImVec2((avail.x - imgSize.x) * 0.5f, (avail.y - imgSize.y) * 0.5f);
+    }
+
     // 画像の上に透明なボタンを重ねて、マウス操作を受け取る
     const ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::Image(static_cast<ImTextureID>(view.Srv().ptr), avail);
+    ImGui::SetCursorScreenPos(ImVec2(p.x + imgPos.x, p.y + imgPos.y));
+    ImGui::Image(static_cast<ImTextureID>(view.Srv().ptr), imgSize);
     ImGui::SetCursorScreenPos(p);
     ImGui::InvisibleButton("##view3d", avail, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
 

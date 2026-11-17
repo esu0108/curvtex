@@ -396,7 +396,9 @@ void App::RenderFrame() {
         // 記録前に品質設定とサイズへ追従する (どちらも変わったときだけ作り直す)
         view_.SetQuality(static_cast<UINT>(state_.aaSamples), static_cast<UINT>(state_.anisotropy));
         view_.PrepareTexture(bake_.Width(), bake_.Height());
-        view_.Resize(static_cast<UINT>(state_.viewReqW), static_cast<UINT>(state_.viewReqH));
+        // 枠をドラッグしてサイズを変えている間は作り直さない (毎フレーム作り直すと重い)。ドラッグが終わったら、新しいサイズに合わせる。
+        // それまでは、前のサイズの絵を縦横比を保って表示する (ui/Ui.cpp の DrawView3D)。
+        if (!window_.IsSizing()) view_.Resize(static_cast<UINT>(state_.viewReqW), static_cast<UINT>(state_.viewReqH));
     }
 
     renderer_.BeginFrame();
