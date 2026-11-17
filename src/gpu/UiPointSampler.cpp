@@ -4,8 +4,6 @@
 #include <cstddef>
 
 #include "imgui.h"
-#include "ui_ps.h"
-#include "ui_vs.h"
 
 using namespace gpu;
 
@@ -59,10 +57,12 @@ void UiPointSampler::Init(ID3D12Device* dev, DXGI_FORMAT rtvFormat) {
         {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, static_cast<UINT>(offsetof(ImDrawVert, col)), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     };
 
+    const ShaderBlob vsBlob = LoadShader("ui_vs"), psBlob = LoadShader("ui_ps");
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
     pd.pRootSignature = rs_.Get();
-    pd.VS             = {g_UiVS, sizeof(g_UiVS)};
-    pd.PS             = {g_UiPS, sizeof(g_UiPS)};
+    pd.VS             = vsBlob.Bytecode();
+    pd.PS             = psBlob.Bytecode();
     pd.InputLayout    = {layout, 3};
     // ブレンドはバックエンド (imgui_impl_dx12.cpp) と同じ: 通常のアルファブレンド
     D3D12_RENDER_TARGET_BLEND_DESC& rt = pd.BlendState.RenderTarget[0];

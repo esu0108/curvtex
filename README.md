@@ -28,7 +28,8 @@
 - Windows 10 / 11
 - Visual Studio 2022 or later
 - CMake 3.24 or later
-- Windows SDK (including `fxc.exe`)
+- Windows SDK (a recent version that includes `dxc.exe`), or the DirectX Shader Compiler from https://github.com/microsoft/DirectXShaderCompiler/releases
+- A GPU and driver that support Shader Model 6.0 (DXIL)
 
 Build using CMake:
 
@@ -45,7 +46,7 @@ build\Release\curvtex.exe
 
 Dependencies are automatically downloaded through CMake FetchContent during configuration.
 
-HLSL shaders are precompiled at build time using `fxc.exe`. If the tool cannot be detected automatically, please specify its path using `-DFXC_EXECUTABLE=<path>`.
+HLSL shaders are precompiled at build time using the DirectX Shader Compiler (`dxc.exe`, Shader Model 6.0) into `.cso` files. After the build, `assets/shaders` (the compiled shaders) and `assets/lang` (the language files) are copied next to `curvtex.exe` and loaded from there at run time, so keep the `assets` folder together with the executable when you distribute it. If `dxc.exe` cannot be detected automatically (it looks in the Windows SDK, the Vulkan SDK and PATH), please specify its path using `-DDXC_EXECUTABLE=<path>`. `dxil.dll` must be in the same folder as `dxc.exe`, because it signs the shaders.
 
 ## Usage
 
@@ -53,7 +54,7 @@ HLSL shaders are precompiled at build time using `fxc.exe`. If the tool cannot b
 2. **Texture Resolution** — Set the output texture width and height.
 3. **Adjust Curvature** — Choose signed or absolute curvature and adjust the maximum curvature value.
 4. **Export** — Choose **File → Save** (`Ctrl+S`) and pick a destination. PNG, BMP, and TGA are supported; the format follows the file extension.
-5. **View menu** — **View → Language** switches the UI language: Japanese, English, Simplified Chinese, Korean, Spanish, French, German, and Russian. The initial language follows the OS display language (English if it is not one of these).
+5. **View menu** — **View → Language** switches the UI language. Each language is a text file in the `assets/lang` folder next to `curvtex.exe` (Japanese, English, Simplified/Traditional Chinese, Korean, Spanish, French, German, Russian, Thai, Indonesian, Portuguese (Brazil), Italian, Vietnamese and Turkish are included). The initial language follows the OS display language (English if there is no match). To add a language, copy `assets/lang/en.lang`, translate the values and restart; no rebuild is needed (see the comments at the top of `en.lang`). Anything missing falls back to the built-in English. Thai, Vietnamese and other scripts need the matching Windows fonts (Leelawadee UI / Segoe UI), which ship with Windows.
    **View → Anti-aliasing** (MSAA) and **View → Anisotropic filtering** adjust the quality of the 3D view.
 
 Changes to curvature settings are reflected in the preview immediately.

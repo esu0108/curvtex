@@ -29,7 +29,8 @@
 - Windows
 - Visual Studio 2022以降
 - CMake
-- Windows SDK（`fxc.exe` を含む）
+- Windows SDK（`dxc.exe` を含む最近のバージョン）、または https://github.com/microsoft/DirectXShaderCompiler/releases の DirectX Shader Compiler
+- シェーダーモデル 6.0（DXIL）に対応した GPU とドライバー
 
 CMakeでビルドします。
 
@@ -46,7 +47,7 @@ build\Release\curvtex.exe
 
 依存ライブラリはCMake FetchContentによって自動的に取得されます。
 
-HLSLシェーダーはビルド時に `fxc.exe` で事前コンパイルされます。自動検出できない場合は `-DFXC_EXECUTABLE=<path>` でパスを指定してください。
+HLSLシェーダーはビルド時に DirectX Shader Compiler（`dxc.exe`、シェーダーモデル 6.0）で `.cso` ファイルへ事前コンパイルされます。ビルド後、`assets/shaders`（コンパイル済みシェーダー）と `assets/lang`（言語ファイル）が `curvtex.exe` の隣へコピーされ、実行時にそこから読み込まれます。配布するときは、`assets` フォルダを実行ファイルと一緒に渡してください。`dxc.exe` を自動検出できない場合（Windows SDK、Vulkan SDK、PATH の順に探します）は `-DDXC_EXECUTABLE=<path>` でパスを指定してください。シェーダーへの署名に使う `dxil.dll` が、`dxc.exe` と同じフォルダにある必要があります。
 
 ## 使い方
 
@@ -55,7 +56,7 @@ HLSLシェーダーはビルド時に `fxc.exe` で事前コンパイルされ�
 3. **プレビュー** — 3Dモデルとベイク済みテクスチャの表示を切り替えます。
 4. **曲率の調整** — 符号付き・絶対値の切り替え、スムージング、パディング、最大曲率を調整します。変更はリアルタイムに反映されます。
 5. **画像の保存** — 「ファイル → 保存」（`Ctrl+S`）で保存先を選びます。PNG / BMP / TGA形式で、形式はファイルの拡張子によって決まります。
-6. **表示メニュー** — 「表示 → 言語」でUIの言語を切り替えます（日本語・English・简体中文・한국어・Español・Français・Deutsch・Русский）。初回起動時はOSの表示言語に合わせ、対応外の言語なら英語になります。
+6. **表示メニュー** — 「表示 → 言語」でUIの言語を切り替えます。各言語は `curvtex.exe` の隣の `assets/lang` フォルダにあるテキストファイルで、日本語・English・简体中文・繁體中文・한국어・Español・Français・Deutsch・Русский・ไทย・Bahasa Indonesia・Português (Brasil)・Italiano・Tiếng Việt・Türkçe が入っています。初回起動時はOSの表示言語に合わせ、合うものが無ければ英語になります。言語を足すには、`assets/lang/en.lang` をコピーして訳し、再起動するだけです（再ビルドは不要。書式は `en.lang` の冒頭を参照）。訳が無い文字列は、内蔵の英語になります。
    「表示 → アンチエイリアス」（MSAA）と「表示 → 異方性フィルタ」で3Dビューの描画品質を調整できます。
 
 ### 3Dビュー操作

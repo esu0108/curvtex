@@ -40,6 +40,12 @@ void Renderer::Init(HWND hwnd) {
     Check(CreateDXGIFactory2(dxgiFlags, IID_PPV_ARGS(&factory_)), "CreateDXGIFactory2");
     Check(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device_)), "D3D12CreateDevice");
 
+    // シェーダーは dxc で作った DXIL (シェーダーモデル 6.0 以上)。対応していない GPU・ドライバーでは、分かりやすいエラーで止める。
+    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel{D3D_SHADER_MODEL_6_0};
+    if (FAILED(device_->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel))) || shaderModel.HighestShaderModel < D3D_SHADER_MODEL_6_0) {
+        throw std::runtime_error("This GPU or driver does not support Shader Model 6.0 (DXIL). Please update the graphics driver (and Windows).");
+    }
+
     D3D12_COMMAND_QUEUE_DESC qd{};
     qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     Check(device_->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue_)), "CreateCommandQueue");

@@ -52,11 +52,23 @@ void DrawMenuBar(AppState& s, const ViewPass& view, Actions& act) {
         }
         if (ImGui::BeginMenu(IdLabel(Str::MenuView, "menuView").c_str())) {
             if (ImGui::BeginMenu(Tr(Str::MenuLanguage))) {
-                const Lang cur = GetLang();
+                const int cur = GetLang();
                 // 言語名は、その言語自身の表記で出す (どの言語で動いていても選べるように)
-                for (int i = 0; i < kLangCount; ++i) {
-                    const Lang l = static_cast<Lang>(i);
-                    if (ImGui::MenuItem(LangNativeName(l), nullptr, cur == l)) SetLang(l);
+                for (int i = 0; i < LangCount(); ++i) {
+                    ImGui::PushID(i); // 同じ名前の言語があっても区別できるように
+                    if (ImGui::MenuItem(LangNativeName(i), nullptr, cur == i)) SetLang(i);
+                    ImGui::PopID();
+                }
+                // lang フォルダの読み込みで問題があったときだけ、内容を出す (英語の文面)
+                const auto& diag = LangDiagnostics();
+                if (!diag.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Language file problems (%d)", static_cast<int>(diag.size()));
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::BeginTooltip();
+                        for (const std::string& d : diag) ImGui::TextUnformatted(d.c_str());
+                        ImGui::EndTooltip();
+                    }
                 }
                 ImGui::EndMenu();
             }

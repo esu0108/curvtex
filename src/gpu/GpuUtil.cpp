@@ -2,10 +2,27 @@
 
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
+#include "platform/AssetPath.h"
+#include "platform/PathUtil.h"
+
 namespace gpu {
+
+ShaderBlob LoadShader(const char* name) {
+    const std::filesystem::path path = AssetPath((std::string("shaders/") + name + ".cso").c_str());
+    std::ifstream               ifs(path, std::ios::binary | std::ios::ate);
+    if (!ifs) throw std::runtime_error("Shader file not found: " + PathToUtf8(path) + " (the assets folder must be next to curvtex.exe)");
+    const std::streamsize size = ifs.tellg();
+    if (size <= 0) throw std::runtime_error("Shader file is empty: " + PathToUtf8(path));
+    ShaderBlob blob;
+    blob.data.resize(static_cast<size_t>(size));
+    ifs.seekg(0);
+    if (!ifs.read(reinterpret_cast<char*>(blob.data.data()), size)) throw std::runtime_error("Cannot read the shader file: " + PathToUtf8(path));
+    return blob;
+}
 
 void Check(HRESULT hr, const char* what) {
     if (FAILED(hr)) {

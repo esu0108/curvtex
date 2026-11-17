@@ -46,7 +46,7 @@ private:
 
     void InitImGui();
     void InitFonts();
-    ImFont* FontFor(Lang lang) const;
+    ImFont* FontFor(int lang) const; // 言語の番号 (i18n/Strings.h)
     void ShutdownImGui();
     void ApplyDpiScale(float scale);
 

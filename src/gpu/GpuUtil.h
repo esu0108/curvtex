@@ -4,6 +4,9 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
+#include <cstdint>
+#include <vector>
+
 // D3D12 の小さな共通ヘルパー。
 namespace gpu {
 
@@ -29,5 +32,13 @@ ComPtr<ID3D12Resource> CreateDefaultBuffer(ID3D12Device* dev, UINT64 size, D3D12
 // レンダーターゲットとして使い、シェーダーから読めるテクスチャ(初期状態は PIXEL_SHADER_RESOURCE)。
 // clear は最適化クリア値で、実際のクリアにも同じ値を使うと警告が出ない。
 ComPtr<ID3D12Resource> CreateRenderTargetTexture(ID3D12Device* dev, UINT w, UINT h, DXGI_FORMAT fmt, const float clear[4], const char* what);
+
+// コンパイル済みシェーダー (assets/shaders/<name>.cso)。ビルド時に dxc が作り (DXIL)、実行ファイルの隣の assets へコピーされる。
+// パイプラインを作り終えるまで、このオブジェクトを生かしておくこと。見つからなければ例外を投げる。
+struct ShaderBlob {
+    std::vector<uint8_t>  data;
+    D3D12_SHADER_BYTECODE Bytecode() const { return {data.data(), data.size()}; }
+};
+ShaderBlob LoadShader(const char* name);
 
 } // namespace gpu

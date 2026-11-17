@@ -2,7 +2,7 @@
 cbuffer Constants : register(b0) {
     row_major float4x4 mvp;  // モデル*ビュー*射影 (行ベクトル規約, DirectXMath と同じ)
     row_major float4x4 view; // 法線をビュー空間へ回す用 (上左3x3のみ使用)
-    float              lit;  // 0: テクスチャそのまま, 1: ライティングあり
+    float              useLighting; // 0: テクスチャそのまま, 1: ライティングあり
     float3             pad;
 };
 
@@ -37,6 +37,6 @@ float4 PSMain(VSOut i, bool front : SV_IsFrontFace) : SV_Target {
 
     const float3 L     = normalize(float3(0.35, 0.55, 0.75)); // ビュー空間のライト方向(カメラ寄り)
     const float  d     = saturate(dot(n, L));
-    const float  shade = lerp(1.0, 0.30 + 0.70 * d, lit);
+    const float  shade = lerp(1.0, 0.30 + 0.70 * d, useLighting);
     return float4(albedo * shade, 1.0);
 }

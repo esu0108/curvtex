@@ -4,10 +4,6 @@
 #include <climits>
 #include <cstring>
 
-#include "mip_ps.h"
-#include "mip_vs.h"
-#include "view_ps.h"
-#include "view_vs.h"
 
 using namespace gpu;
 
@@ -97,10 +93,12 @@ void ViewPass::CreateMipPipeline() {
     rsd.Flags             = D3D12_ROOT_SIGNATURE_FLAG_NONE;
     rsMip_                = MakeRootSignature(dev, rsd);
 
+    const ShaderBlob vsBlob = LoadShader("mip_vs"), psBlob = LoadShader("mip_ps");
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
     pd.pRootSignature = rsMip_.Get();
-    pd.VS             = {g_MipVS, sizeof(g_MipVS)};
-    pd.PS             = {g_MipPS, sizeof(g_MipPS)};
+    pd.VS             = vsBlob.Bytecode();
+    pd.PS             = psBlob.Bytecode();
     pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     pd.SampleMask            = UINT_MAX;
     pd.RasterizerState       = DefaultRaster();
@@ -321,10 +319,12 @@ void ViewPass::CreatePipeline() {
 
     const auto layout = GpuMesh::InputLayout();
 
+    const ShaderBlob vsBlob = LoadShader("view_vs"), psBlob = LoadShader("view_ps");
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
     pd.pRootSignature = rs_.Get();
-    pd.VS             = {g_ViewVS, sizeof(g_ViewVS)};
-    pd.PS             = {g_ViewPS, sizeof(g_ViewPS)};
+    pd.VS             = vsBlob.Bytecode();
+    pd.PS             = psBlob.Bytecode();
     pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     pd.SampleMask                            = UINT_MAX;
     pd.RasterizerState                       = DefaultRaster();

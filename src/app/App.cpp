@@ -132,17 +132,13 @@ void App::InitFonts() {
     fontLatin_  = addSet({kLatin, kThai, kJa, kZh, kZhHant, kKo});
 }
 
-ImFont* App::FontFor(Lang lang) const {
-    switch (lang) {
-    case Lang::Zh: return fontZh_;
-    case Lang::ZhHant: return fontZhHant_;
-    case Lang::Ko: return fontKo_;
-    case Lang::Th: return fontTh_;
-    case Lang::Id:
-    case Lang::Pt:
-    case Lang::It:
-    case Lang::Vi:
-    case Lang::Tr: return fontLatin_; // 拡張ラテン文字 (ベトナム語の声調記号など) を含むフォントを先頭にする
+ImFont* App::FontFor(int lang) const {
+    switch (LangFontKind(lang)) {
+    case FontKind::Zh: return fontZh_;
+    case FontKind::ZhHant: return fontZhHant_;
+    case FontKind::Ko: return fontKo_;
+    case FontKind::Th: return fontTh_;
+    case FontKind::Latin: return fontLatin_; // 拡張ラテン文字 (ベトナム語の声調記号など) を含むフォントを先頭にする
     default: return fontJa_; // 日本語・英語・欧州言語 (ラテン文字・キリル文字は日本語フォントにある)
     }
 }

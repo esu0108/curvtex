@@ -5,14 +5,7 @@
 #include <iterator>
 #include <vector>
 
-// ビルド時に fxc でコンパイルされたシェーダ (shaders/*.hlsl → CMake が生成するヘッダ)
-#include "jfa_init_ps.h"
-#include "jfa_step_ps.h"
-#include "jfa_vs.h"
-#include "raster_ps.h"
-#include "raster_vs.h"
-#include "shade_ps.h"
-#include "shade_vs.h"
+// ビルド時に dxc でコンパイルされたシェーダ (shaders/*.hlsl → assets/shaders/*.cso。LoadShader で読み込む)
 
 using namespace gpu;
 
@@ -129,10 +122,12 @@ void BakePass::CreatePipelines() {
 
         const auto layout = GpuMesh::InputLayout();
 
+        const ShaderBlob vsBlob = LoadShader("raster_vs"), psBlob = LoadShader("raster_ps");
+
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
         pd.pRootSignature = rsRaster_.Get();
-        pd.VS             = {g_RasterVS, sizeof(g_RasterVS)};
-        pd.PS             = {g_RasterPS, sizeof(g_RasterPS)};
+        pd.VS             = vsBlob.Bytecode();
+        pd.PS             = psBlob.Bytecode();
         pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
@@ -156,10 +151,12 @@ void BakePass::CreatePipelines() {
         rsd.pParameters   = params;
         rsShade_          = MakeRootSignature(dev, rsd);
 
+        const ShaderBlob vsBlob = LoadShader("shade_vs"), psBlob = LoadShader("shade_ps");
+
         D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
         pd.pRootSignature = rsShade_.Get();
-        pd.VS             = {g_ShadeVS, sizeof(g_ShadeVS)};
-        pd.PS             = {g_ShadePS, sizeof(g_ShadePS)};
+        pd.VS             = vsBlob.Bytecode();
+        pd.PS             = psBlob.Bytecode();
         pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         pd.SampleMask            = UINT_MAX;
         pd.RasterizerState       = DefaultRaster();
@@ -184,11 +181,13 @@ void BakePass::CreatePipelines() {
         rsJfaInit_ = makeRoot(0); // PSInit: t0 = 曲率テクスチャ(カバレッジ)
         rsJfaStep_ = makeRoot(1); // PSStep: t1 = 前のパスのシード
 
-        auto makePso = [&](ID3D12RootSignature* rs, const void* ps, size_t psSize, const char* what) {
+        const ShaderBlob jfaVs = LoadShader("jfa_vs"), jfaInitPs = LoadShader("jfa_init_ps"), jfaStepPs = LoadShader("jfa_step_ps");
+
+        auto makePso = [&](ID3D12RootSignature* rs, const ShaderBlob& ps, const char* what) {
             D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};
             pd.pRootSignature = rs;
-            pd.VS             = {g_JfaVS, sizeof(g_JfaVS)};
-            pd.PS             = {ps, psSize};
+            pd.VS             = jfaVs.Bytecode();
+            pd.PS             = ps.Bytecode();
             pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
             pd.SampleMask            = UINT_MAX;
             pd.RasterizerState       = DefaultRaster();
@@ -200,8 +199,8 @@ void BakePass::CreatePipelines() {
             Check(dev->CreateGraphicsPipelineState(&pd, IID_PPV_ARGS(&pso)), what);
             return pso;
         };
-        psoJfaInit_ = makePso(rsJfaInit_.Get(), g_JfaInitPS, sizeof(g_JfaInitPS), "CreateGraphicsPipelineState(jfa init)");
-        psoJfaStep_ = makePso(rsJfaStep_.Get(), g_JfaStepPS, sizeof(g_JfaStepPS), "CreateGraphicsPipelineState(jfa step)");
+        psoJfaInit_ = makePso(rsJfaInit_.Get(), jfaInitPs, "CreateGraphicsPipelineState(jfa init)");
+        psoJfaStep_ = makePso(rsJfaStep_.Get(), jfaStepPs, "CreateGraphicsPipelineState(jfa step)");
     }
 }
 

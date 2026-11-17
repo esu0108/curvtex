@@ -4,8 +4,6 @@
 #include <iterator>
 #include <vector>
 
-#include "curvature_cs.h"
-#include "smooth_cs.h"
 
 using namespace gpu;
 
@@ -85,12 +83,14 @@ void CurvatureCompute::Init(Renderer& renderer) {
         rsSmooth_         = MakeRootSignature(dev, rsd);
     }
 
+    const ShaderBlob curvCs = LoadShader("curvature_cs"), smoothCs = LoadShader("smooth_cs");
+
     D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
     pd.pRootSignature = rsCurv_.Get();
-    pd.CS             = {g_CurvatureCS, sizeof(g_CurvatureCS)};
+    pd.CS             = curvCs.Bytecode();
     Check(dev->CreateComputePipelineState(&pd, IID_PPV_ARGS(&psoCurv_)), "CreateComputePipelineState(curvature)");
     pd.pRootSignature = rsSmooth_.Get();
-    pd.CS             = {g_SmoothCS, sizeof(g_SmoothCS)};
+    pd.CS             = smoothCs.Bytecode();
     Check(dev->CreateComputePipelineState(&pd, IID_PPV_ARGS(&psoSmooth_)), "CreateComputePipelineState(smooth)");
 }
 
