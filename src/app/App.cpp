@@ -269,7 +269,8 @@ Result BuildMeshJob(const std::string& path, std::shared_ptr<const ModelScene> s
         r.scene = scene;
         r.sel   = sel;
         if (!BuildMesh(*scene, sel, r.base, r.err)) return r;
-        r.mesh = r.base;
+        r.mesh    = r.base;
+        r.uvEdges = BuildUvEdges(r.base); // UV ワイヤーフレームの辺 (同じワーカーで作る)
         if (smooth) RecomputeSmoothNormals(r.mesh);
         r.graph = BuildCurvatureGraph(r.mesh); // 隣接グラフ(重いので読み込みと同じワーカーで作る)
         r.ok    = true;
@@ -314,6 +315,7 @@ bool App::PollJobs() {
             try {
                 gpuMesh_.Upload(renderer_, r.mesh); // D3D12 リソース作成はメインスレッドで
                 curvature_.SetGraph(r.graph);
+                state_.uvEdges = std::move(r.uvEdges);
                 baseMesh_        = std::move(r.base);
                 state_.scene     = r.scene;
                 state_.selApplied = r.sel;

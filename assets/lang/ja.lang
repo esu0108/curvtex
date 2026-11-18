@@ -110,3 +110,6 @@ ErrFbxNoUv = "このFBXにはUV座標がありません。UV展開してから�
 ErrGltfLoad = "glTF読み込みエラー: "
 ErrGltfParse = "glTF解析エラー: "
 ErrGltfNoUv = "このglTFにはUV座標(TEXCOORD_0)がありません。UV展開してから書き出してください"
+TexUvWire = "UVワイヤーフレーム"
+HintUvWire = "メッシュの辺をUV空間に重ねて表示します。赤い辺は、UVが0～1の範囲外にあります（その部分はテクスチャに焼かれません）。"
+UvWireThinned = "辺が多いため、一部だけ表示しています"

@@ -110,3 +110,6 @@ ErrFbxNoUv = "Dieses FBX hat keine UV-Koordinaten. UVs vor dem Export abwickeln.
 ErrGltfLoad = "glTF-Ladefehler: "
 ErrGltfParse = "glTF-Parsefehler: "
 ErrGltfNoUv = "Dieses glTF hat keine UV-Koordinaten (TEXCOORD_0). UVs vor dem Export abwickeln."
+TexUvWire = "UV-Drahtgitter"
+HintUvWire = "Blendet die Kanten des Meshes im UV-Raum ein. Rote Kanten haben UVs außerhalb des Bereichs 0–1 (dieser Teil wird nicht in die Textur gebacken)."
+UvWireThinned = "Nur ein Teil der Kanten wird angezeigt (zu viele)"

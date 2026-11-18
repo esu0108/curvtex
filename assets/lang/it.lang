@@ -110,3 +110,6 @@ ErrFbxNoUv = "Questo FBX non ha coordinate UV. Esegui l’unwrap UV prima di esp
 ErrGltfLoad = "Errore di caricamento glTF: "
 ErrGltfParse = "Errore di analisi glTF: "
 ErrGltfNoUv = "Questo glTF non ha coordinate UV (TEXCOORD_0). Esegui l’unwrap UV prima di esportare."
+TexUvWire = "Wireframe UV"
+HintUvWire = "Sovrappone gli spigoli della mesh nello spazio UV. Gli spigoli rossi hanno UV fuori dall’intervallo 0–1 (quella parte non viene calcolata nella texture)."
+UvWireThinned = "Viene mostrata solo una parte degli spigoli (sono troppi)"

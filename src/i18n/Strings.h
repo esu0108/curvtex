@@ -53,6 +53,9 @@
     X(CameraHelp, "Left-drag: rotate / Right- or middle-drag: pan / Wheel: zoom") \
     X(ResetView, "Reset view") \
     X(TexLinear, "Linear interpolation") \
+    X(TexUvWire, "UV wireframe") \
+    X(HintUvWire, "Overlays the mesh edges in UV space. Red edges have UVs outside the 0-1 range (those parts are not baked into the texture).") \
+    X(UvWireThinned, "Showing a subset of the edges (too many to draw)") \
     X(TextureHelp, "Wheel: zoom / Drag: pan / Double-click: reset") \
     X(LabelPixel, "Pixel") \
     X(LabelValue, "Display value") \

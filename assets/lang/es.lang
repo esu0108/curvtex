@@ -110,3 +110,6 @@ ErrFbxNoUv = "Este FBX no tiene coordenadas UV. Desenvuelva las UV antes de expo
 ErrGltfLoad = "Error de carga de glTF: "
 ErrGltfParse = "Error de análisis de glTF: "
 ErrGltfNoUv = "Este glTF no tiene coordenadas UV (TEXCOORD_0). Desenvuelva las UV antes de exportar."
+TexUvWire = "Estructura alámbrica UV"
+HintUvWire = "Superpone las aristas de la malla en el espacio UV. Las aristas rojas tienen UV fuera del rango 0–1 (esa parte no se hornea en la textura)."
+UvWireThinned = "Se muestra solo una parte de las aristas (hay demasiadas)"

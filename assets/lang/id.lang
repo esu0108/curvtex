@@ -110,3 +110,6 @@ ErrFbxNoUv = "FBX ini tidak memiliki koordinat UV. Lakukan UV unwrap sebelum men
 ErrGltfLoad = "Kesalahan memuat glTF: "
 ErrGltfParse = "Kesalahan parsing glTF: "
 ErrGltfNoUv = "glTF ini tidak memiliki koordinat UV (TEXCOORD_0). Lakukan UV unwrap sebelum mengekspor."
+TexUvWire = "Wireframe UV"
+HintUvWire = "Menampilkan tepi mesh di ruang UV. Tepi merah memiliki UV di luar rentang 0–1 (bagian itu tidak di-bake ke tekstur)."
+UvWireThinned = "Hanya sebagian tepi yang ditampilkan (terlalu banyak)"

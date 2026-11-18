@@ -110,3 +110,6 @@ ErrFbxNoUv = "FBX này không có tọa độ UV. Hãy trải UV trước khi xu
 ErrGltfLoad = "Lỗi tải glTF: "
 ErrGltfParse = "Lỗi phân tích glTF: "
 ErrGltfNoUv = "glTF này không có tọa độ UV (TEXCOORD_0). Hãy trải UV trước khi xuất."
+TexUvWire = "Khung dây UV"
+HintUvWire = "Phủ các cạnh của mesh lên không gian UV. Cạnh màu đỏ có UV nằm ngoài phạm vi 0–1 (phần đó không được bake vào texture)."
+UvWireThinned = "Chỉ hiển thị một phần các cạnh (quá nhiều)"

@@ -1,8 +1,4 @@
 cmake_minimum_required(VERSION 3.24)
-cmake_policy(SET CMP0091 NEW)
-set(CMAKE_MSVC_RUNTIME_LIBRARY
-    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-)
 project(curvtex LANGUAGES CXX C RC)  # C: ufbx.c のコンパイル用 / RC: アイコン等のリソース
 
 if(NOT WIN32)
@@ -204,6 +200,8 @@ add_executable(curvtex WIN32
   src/mesh/MeshBuild.cpp
   src/mesh/MeshBuild.h
   src/mesh/MeshUtil.h
+  src/mesh/UvEdges.cpp
+  src/mesh/UvEdges.h
   src/mesh/MeshGltf.cpp
   src/mesh/MeshFbx.cpp
   # 画像書き出し

@@ -110,3 +110,6 @@ ErrFbxNoUv = "Este FBX não tem coordenadas UV. Faça o desdobramento UV antes d
 ErrGltfLoad = "Erro ao carregar o glTF: "
 ErrGltfParse = "Erro ao analisar o glTF: "
 ErrGltfNoUv = "Este glTF não tem coordenadas UV (TEXCOORD_0). Faça o desdobramento UV antes de exportar."
+TexUvWire = "Wireframe UV"
+HintUvWire = "Sobrepõe as arestas da malha no espaço UV. As arestas vermelhas têm UVs fora do intervalo 0–1 (essa parte não é gerada na textura)."
+UvWireThinned = "Exibindo apenas parte das arestas (são muitas)"

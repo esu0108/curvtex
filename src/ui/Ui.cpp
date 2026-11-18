@@ -263,6 +263,43 @@ void DrawView3D(AppState& s, const ViewPass& view) {
     if (ImGui::IsItemHovered() && io.MouseWheel != 0.0f) s.camera.Zoom(io.MouseWheel);
 }
 
+// UV ワイヤーフレーム: 辺を、テクスチャと同じ位置・拡大率で重ねて描く。
+//   origin: テクスチャの左上の画面座標 / w, h: テクスチャ全体の画面上の大きさ (v=1 が上端)
+//   辺が 0～1 の範囲外にあるものは赤で描く (その部分はテクスチャに焼かれないので、見つけやすいように)。
+//   表示領域に入る辺が多すぎるときは間引き、間引いたら true を返す。
+bool DrawUvWire(ImDrawList* dl, const UvEdges& uv, ImVec2 origin, float w, float h, ImVec2 cmin, ImVec2 cmax) {
+    constexpr size_t kBudget = 150000; // 1 フレームに描く辺の上限 (ImGui は 1 辺ごとに頂点を作るので、多すぎると重い)
+
+    auto toScreen = [&](float u, float v) { return ImVec2(origin.x + u * w, origin.y + (1.0f - v) * h); };
+    auto visible  = [&](const ImVec2& a, const ImVec2& b) {
+        return std::max(a.x, b.x) >= cmin.x && std::min(a.x, b.x) <= cmax.x && std::max(a.y, b.y) >= cmin.y && std::min(a.y, b.y) <= cmax.y;
+    };
+
+    // 1回目: 表示領域に入る辺の数を数えて、間引きの幅を決める
+    size_t count = 0;
+    for (const auto& e : uv.edges) {
+        if (visible(toScreen(e[0], e[1]), toScreen(e[2], e[3]))) ++count;
+    }
+    const size_t stride = std::max<size_t>(1, (count + kBudget - 1) / kBudget);
+
+    // 2回目: 描く。細かい線を大量に引くので、アンチエイリアスは切る。
+    const ImDrawListFlags oldFlags = dl->Flags;
+    dl->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+    const ImU32 colIn  = IM_COL32(80, 200, 255, 210);
+    const ImU32 colOut = IM_COL32(255, 70, 70, 240);
+    size_t      n      = 0;
+    for (const auto& e : uv.edges) {
+        const ImVec2 a = toScreen(e[0], e[1]);
+        const ImVec2 b = toScreen(e[2], e[3]);
+        if (!visible(a, b)) continue;
+        if (n++ % stride != 0) continue;
+        const bool outside = e[0] < 0.0f || e[0] > 1.0f || e[1] < 0.0f || e[1] > 1.0f || e[2] < 0.0f || e[2] > 1.0f || e[3] < 0.0f || e[3] > 1.0f;
+        dl->AddLine(a, b, outside ? colOut : colIn, 1.0f);
+    }
+    dl->Flags = oldFlags;
+    return stride > 1;
+}
+
 // テクスチャタブ: ホイールでカーソル位置を中心にズーム、ドラッグでパン、カーソル下のピクセル値をツールチップに出す。
 // 画像は DrawList の矩形と UV だけで拡大縮小する (GPU 側の処理は変えない)。
 void DrawTexture(AppState& s, const BakePass& bake) {
@@ -282,6 +319,9 @@ void DrawTexture(AppState& s, const BakePass& bake) {
     if (ImGui::Button(Tr(Str::ResetView))) v.Reset();
     ImGui::SameLine();
     ImGui::Checkbox(Tr(Str::TexLinear), &v.linear);
+    ImGui::SameLine();
+    ImGui::Checkbox(IdLabel(Str::TexUvWire, "uvwire").c_str(), &v.showUvWire);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Tr(Str::HintUvWire));
     ImGui::SameLine();
     TextDisabledWrapped(Tr(Str::TextureHelp));
 
@@ -349,6 +389,12 @@ void DrawTexture(AppState& s, const BakePass& bake) {
         const int   y1 = std::min(texH, static_cast<int>(std::ceil((cmax.y - p0.y) / scale)));
         for (int x = x0; x <= x1; ++x) dl->AddLine(ImVec2(p0.x + x * scale, cmin.y), ImVec2(p0.x + x * scale, cmax.y), gc);
         for (int y = y0; y <= y1; ++y) dl->AddLine(ImVec2(cmin.x, p0.y + y * scale), ImVec2(cmax.x, p0.y + y * scale), gc);
+    }
+
+    // ---- UV ワイヤーフレーム ----
+    if (v.showUvWire && s.uvEdges && !s.uvEdges->edges.empty()) {
+        const bool thinned = DrawUvWire(dl, *s.uvEdges, p0, texW * scale, texH * scale, cmin, cmax);
+        if (thinned) dl->AddText(ImVec2(cmin.x + 6.0f, cmax.y - ImGui::GetTextLineHeight() - 6.0f), IM_COL32(255, 220, 120, 255), Tr(Str::UvWireThinned));
     }
 
     // ---- ピクセル値 ----

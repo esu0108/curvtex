@@ -110,3 +110,6 @@ ErrFbxNoUv = "Bu FBX’te UV koordinatı yok. Dışa aktarmadan önce UV açıl�
 ErrGltfLoad = "glTF yükleme hatası: "
 ErrGltfParse = "glTF ayrıştırma hatası: "
 ErrGltfNoUv = "Bu glTF’te UV koordinatı (TEXCOORD_0) yok. Dışa aktarmadan önce UV açılımı yapın."
+TexUvWire = "UV tel kafes"
+HintUvWire = "Mesh kenarlarını UV uzayında üst üste gösterir. Kırmızı kenarların UV’si 0–1 aralığının dışındadır (bu kısım dokuya bake edilmez)."
+UvWireThinned = "Kenarların yalnızca bir kısmı gösteriliyor (çok fazla)"

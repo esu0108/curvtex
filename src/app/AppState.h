@@ -6,6 +6,7 @@
 
 #include "i18n/Strings.h"
 #include "mesh/Mesh.h"
+#include "mesh/UvEdges.h"
 #include "ui/Camera.h"
 
 // テクスチャタブの表示状態 (ズーム・パン)
@@ -14,6 +15,7 @@ struct TexViewState {
     float offX = 0.0f, offY = 0.0f; // 表示領域の中心から見たテクスチャ中心のずれ (画面px)
     int   texW = 0, texH = 0;       // 前回表示したテクスチャのサイズ (変わったらリセットする)
     bool  linear = true;            // true: 線形補間 / false: 最近傍 (Reset では変えない)
+    bool  showUvWire = false;       // UV ワイヤーフレームを重ねる (Reset では変えない)
     void  Reset() { zoom = 1.0f; offX = offY = 0.0f; }
 };
 
@@ -71,6 +73,7 @@ struct AppState {
     // ---- テクスチャタブ ----
     TexViewState texView;
     TexPixels    texPixels;
+    std::shared_ptr<const UvEdges> uvEdges; // ベイク対象のメッシュの辺 (UV 空間)。読み込み・選択の適用のたびに App が更新
     bool         texPixelsWanted = false; // 今フレーム、テクスチャ上にカーソルがありピクセル値が要る (UI が設定。App が読み戻す)
 };
 

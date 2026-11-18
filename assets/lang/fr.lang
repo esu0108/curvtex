@@ -110,3 +110,6 @@ ErrFbxNoUv = "Ce FBX n'a pas de coordonnées UV. Dépliez les UV avant d'exporte
 ErrGltfLoad = "Erreur de chargement glTF : "
 ErrGltfParse = "Erreur d'analyse glTF : "
 ErrGltfNoUv = "Ce glTF n'a pas de coordonnées UV (TEXCOORD_0). Dépliez les UV avant d'exporter."
+TexUvWire = "Fil de fer UV"
+HintUvWire = "Superpose les arêtes du maillage dans l’espace UV. Les arêtes rouges ont des UV hors de la plage 0–1 (cette partie n’est pas bakée dans la texture)."
+UvWireThinned = "Seule une partie des arêtes est affichée (trop nombreuses)"

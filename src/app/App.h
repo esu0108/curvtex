@@ -34,6 +34,7 @@ private:
         std::string err;
         std::shared_ptr<const ModelScene> scene; // 全パーツ (新規読み込みなら読み込んだもの、メッシュ更新なら引き継いだもの)
         ModelSelection sel;   // このメッシュを作ったときの選択
+        std::shared_ptr<const UvEdges> uvEdges; // base の辺 (UV ワイヤーフレーム用)
         Mesh        base;     // 選択したパーツを結合したまま
         Mesh        mesh;     // スムース法線適用後(GPUへ送る)
         CurvatureGraph graph; // mesh から作った曲率計算用の隣接グラフ

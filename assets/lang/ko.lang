@@ -110,3 +110,6 @@ ErrFbxNoUv = "이 FBX에는 UV 좌표가 없습니다. UV를 펼친 뒤 내보�
 ErrGltfLoad = "glTF 로드 오류: "
 ErrGltfParse = "glTF 구문 분석 오류: "
 ErrGltfNoUv = "이 glTF에는 UV 좌표(TEXCOORD_0)가 없습니다. UV를 펼친 뒤 내보내세요."
+TexUvWire = "UV 와이어프레임"
+HintUvWire = "메시의 에지를 UV 공간에 겹쳐 표시합니다. 빨간 에지는 UV가 0–1 범위 밖에 있습니다(해당 부분은 텍스처에 베이크되지 않습니다)."
+UvWireThinned = "에지가 많아 일부만 표시합니다"
